@@ -31,10 +31,13 @@ module one_hot_to_integer
         output logic [(C_WIDTH == 1) ? 0 : ($clog2(C_WIDTH)-1) : 0] int_out
     );
     ////////////////////////////////////////////////////
-    //Implementation    
-    generate if (C_WIDTH == 1) begin : gen_width_one
-        assign int_out = 0;
-    end else begin : gen_width_two_plus
+    //Implementation
+    generate if (C_WIDTH == 1)
+        assign int_out[0] = 0;
+    else begin
+        localparam LOG2_WIDTH = $clog2(C_WIDTH);
+        logic [LOG2_WIDTH-1 : 0] int_array [C_WIDTH];
+
         always_comb begin
             int_out = 0;
             foreach(one_hot[i])
