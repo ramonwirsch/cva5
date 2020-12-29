@@ -153,11 +153,13 @@ package csr_types;
         logic zero6;
     } mie_t;
 
+    /* verilator lint_off SYMRSVDWORD */
     typedef struct packed {
         logic is_interrupt;
         logic [XLEN-1-1-ECODE_W:0] zeroes;
         logic [ECODE_W-1:0] code;
     } mcause_t;
+    /* verilator lint_on SYMRSVDWORD */
 
 
     typedef struct packed {

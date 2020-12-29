@@ -68,12 +68,13 @@ package l2_config_and_types;
         logic [L2_ID_W-1:0] id;
     } l2_mem_request_t;
 
-
+    /* verilator lint_off SYMRSVDWORD */
     typedef struct packed{
         logic [$clog2(L2_NUM_PORTS)-1:0] id;
         logic [4:0] burst_size;
         logic abort_request;
     } l2_data_attributes_t;
+    /* verilator lint_on SYMRSVDWORD */
 
 
     typedef struct packed{

@@ -118,4 +118,3 @@ interface l2_memory_interface;
 `endif
 
 endinterface
-
