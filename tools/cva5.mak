@@ -10,6 +10,8 @@ CVA5_INCLUDED_SIM_SRCS = $(addprefix $(VERILATOR_DIR)/, cva5_sim.cc AXI_DDR_simu
 #Tracing: Set to True or False
 TRACE_ENABLE?=False
 
+#Default Reset Vector
+DEFAULT_RESET_VECTOR ?= 0x80000000
 
 #Simulation Binary Name
 CVA5_SIM_DIR?=$(VERILATOR_DIR)/build
@@ -46,8 +48,10 @@ delay_seed = DELAY_SEED=$(DELAY_SEED)
 #ddr_start_loc = DDR_FILE_STARTING_LOCATION=$(DDR_FILE_STARTING_LOCATION)
 #ddr_num_bytes = DDR_FILE_NUM_BYTES=$(DDR_FILE_NUM_BYTES)
 
+reset_vector_opt = DEFAULT_RESET_VECTOR=$(DEFAULT_RESET_VECTOR)
+
 CFLAGS = -g0 -O3 -std=c++14 -march=native -D$(ddr_size_def) -D$(page_size_def) -D$(max_inflight_read_requests) -D$(max_inflight_write_requests)\
-	-D$(mix_delay_read) -D$(max_delay_read) -D$(min_delay_write) -D$(max_delay_write) -D$(delay_seed)
+	-D$(mix_delay_read) -D$(max_delay_read) -D$(min_delay_write) -D$(max_delay_write) -D$(delay_seed) -D$(reset_vector_opt)
 
 	#(to-do)-D$(ddr_init_file) -D$(ddr_start_loc) -D$(ddr_num_bytes)
 
