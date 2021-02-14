@@ -226,7 +226,7 @@ module l2_arbiter
             assign request[i].inv_valid = inv_response_fifos[i].valid;
 
             //FIFO instantiation
-            cva5_fifo #(.DATA_WIDTH(30), .FIFO_DEPTH(L2_INVALIDATION_FIFO_DEPTHS)) inv_response_fifo (.*, .fifo(inv_response_fifos[i]));
+            cva5_fifo #(.DATA_WIDTH($bits(requests[i].addr)), .FIFO_DEPTH(L2_INVALIDATION_FIFO_DEPTHS)) inv_response_fifo (.*, .fifo(inv_response_fifos[i]));
             //Arbiter side
             assign inv_response_fifos[i].push = reserv_valid & reserv_store  & ~reserv_id_v[i];
             assign inv_response_fifos[i].potential_push = reserv_valid & reserv_store  & ~reserv_id_v[i];
