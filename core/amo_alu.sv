@@ -43,6 +43,7 @@ module amo_alu
 
     /* verilator lint_off CASEINCOMPLETE */
     always_comb begin
+        result = '0;
         case (amo_alu_inputs.op)// <--unique as not all codes are in use
             AMO_SWAP_FN5 : result = amo_alu_inputs.rs2;
             AMO_ADD_FN5 : result = amo_alu_inputs.rs1_load + amo_alu_inputs.rs2;
