@@ -40,27 +40,29 @@ module branch_predictor
 
     //BP tag width can be reduced, based on memory size, when virtual address
     //support is not enabled
-    localparam longint CACHE_RANGE = 64'(CONFIG.ICACHE_ADDR.H) - 64'(CONFIG.ICACHE_ADDR.L) + 1;
-    localparam longint SCRATCH_RANGE = 64'(CONFIG.ILOCAL_MEM_ADDR.H) - 64'(CONFIG.ILOCAL_MEM_ADDR.L) + 1;
-    localparam longint BUS_RANGE = 64'(CONFIG.IBUS_ADDR.H) - 64'(CONFIG.IBUS_ADDR.L) + 1;
+
+    localparam longint CACHE_MIN = (CONFIG.INCLUDE_ICACHE) ? 64'(CONFIG.ICACHE_ADDR.L) : 64'h00000000FFFFFFFF;
+    localparam longint BUS_MIN = (CONFIG.INCLUDE_IBUS) ? 64'(CONFIG.IBUS_ADDR.L) : 64'h00000000FFFFFFFF;
+    localparam longint LOCAL_MIN = (CONFIG.INCLUDE_ILOCAL_MEM) ? 64'(CONFIG.ILOCAL_MEM_ADDR.L) : 64'h00000000FFFFFFFF;
+
+    localparam longint CACHE_MAX = (CONFIG.INCLUDE_ICACHE) ? 64'(CONFIG.ICACHE_ADDR.H) : 64'h0;
+    localparam longint BUS_MAX = (CONFIG.INCLUDE_IBUS) ? 64'(CONFIG.IBUS_ADDR.H) : 64'h0;
+    localparam longint LOCAL_MAX = (CONFIG.INCLUDE_ILOCAL_MEM) ? 64'(CONFIG.ILOCAL_MEM_ADDR.H) : 64'h0;
+
+    `define max(a,b) ((a > b) ? a : b)
+    `define min(a,b) ((a < b) ? a : b)
+
+    localparam longint RANGE_MIN = `min(CACHE_MIN, `min(BUS_MIN, LOCAL_MIN));
+    localparam longint RANGE_MAX = `max(CACHE_MAX, `max(BUS_MAX, LOCAL_MAX));
+
 
     function int get_memory_width();
         if(CONFIG.INCLUDE_S_MODE)
             return 32;
-        else if (CONFIG.INCLUDE_ICACHE && (
-            (CONFIG.INCLUDE_ILOCAL_MEM && CACHE_RANGE > SCRATCH_RANGE) ||
-            (CONFIG.INCLUDE_IBUS && CACHE_RANGE > BUS_RANGE) ||
-            (!CONFIG.INCLUDE_ILOCAL_MEM && !CONFIG.INCLUDE_IBUS))
-        )
-            return $clog2(CACHE_RANGE);
-        else if (CONFIG.INCLUDE_IBUS && (
-            (CONFIG.INCLUDE_ILOCAL_MEM && BUS_RANGE > SCRATCH_RANGE) ||
-            (!CONFIG.INCLUDE_ILOCAL_MEM))
-        )
-            return $clog2(BUS_RANGE);
-        else
-            return $clog2(SCRATCH_RANGE);
-    endfunction
+        else begin
+            return $clog2(RANGE_MAX - RANGE_MIN + 1);
+        end
+    endfunction : get_memory_width
 
     localparam BRANCH_ADDR_W = $clog2(CONFIG.BP.ENTRIES);
     localparam BTAG_W = get_memory_width() - BRANCH_ADDR_W - 2;
