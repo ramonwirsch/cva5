@@ -21,6 +21,7 @@
  */
 
 #include <iostream>
+#include <termios.h>
 #include "CVA5Tracer.h"
 
 //#define TRACE_ON
@@ -104,9 +105,8 @@ void CVA5Tracer::reset() {
 
     tb->rst = 0;
     reset_stats();
+	this->reset_uart();
     std::cout << "DONE System reset \n" << std::flush;
-
-
 }
 
 void CVA5Tracer::set_log_file(std::ofstream* logFile) {
@@ -117,10 +117,65 @@ void CVA5Tracer::set_pc_file(std::ofstream* pcFile) {
     logPC = true;
 }
 
+void CVA5Tracer::set_uart_file(int uFile) {
+	this->uartFile = uFile;
+	this->hasUartFile = true;
+}
+
+void CVA5Tracer::reset_uart() {
+	if (this->hasUartFile) {
+		struct termios uartOptions;
+		tcgetattr(this->uartFile, &uartOptions);
+
+		// Baud rate (read/write)
+		cfsetspeed(&uartOptions, 115200);
+
+		// Timeout Settings
+		uartOptions.c_cc[VMIN] = 1;
+		uartOptions.c_cc[VTIME] = 0;
+
+		// choosing Raw input
+		uartOptions.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
+
+		// choosing Raw output
+		uartOptions.c_oflag &= ~OPOST;
+
+		// enabling Software flow control
+		uartOptions.c_cflag |= (CLOCAL | CREAD); // enable receiver
+		tcsetattr(this->uartFile, TCSAFLUSH, &uartOptions); // Flush input/output buffer and apply changes
+	}
+	tb->read_uart = 0;
+	tb->uart_read_byte = 0;
+}
+
+
 void CVA5Tracer::update_UART() {
 	if (tb->write_uart) {
-		std::cout <<  tb->uart_byte << std::flush;
-		*logFile << tb->uart_byte;
+		std::cout <<  tb->uart_write_byte << std::flush;
+		*logFile << tb->uart_write_byte;
+	}
+
+	if (this->hasUartFile) {
+		// write handling (testbench to tty)
+		if (tb->write_uart) {
+			write(this->uartFile, &tb->uart_write_byte, 1);
+		}
+
+		// clean up old read if needed
+		if(uartReadPending && tb->read_uart_ack) {
+			uartReadPending = false;
+			tb->read_uart = 0;
+		}
+
+		// read handling (check tty for next character, and send to testbench)
+		if(!uartReadPending) {
+			char c;
+			if(read(this->uartFile, &c, 1) == 1) {
+				tb->uart_read_byte = c;
+				tb->read_uart = 1;
+				uartReadPending = true;
+			}
+		}
 	}
 }
 

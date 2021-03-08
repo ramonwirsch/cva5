@@ -160,7 +160,10 @@ module cva5_sim
 
         //Used by verilator
         output logic write_uart,
-        output logic [7:0] uart_byte,
+        output logic [7:0] uart_write_byte,
+        input logic read_uart,
+        input logic [7:0] uart_read_byte,
+        output logic read_uart_ack,
 
         //Trace Interface
         output integer NUM_RETIRE_PORTS,
@@ -382,12 +385,12 @@ module cva5_sim
 
     initial begin
         write_uart = 0;
-        uart_byte = 0;
+        uart_write_byte = 0;
     end
     //Capture writes to UART
     always_ff @(posedge clk) begin
         write_uart <= (m_axi.wvalid && m_axi.wready && m_axi.awaddr[13:0] == 4096);
-        uart_byte <= m_axi.wdata[7:0];
+        uart_write_byte <= m_axi.wdata[7:0];
     end
 
 

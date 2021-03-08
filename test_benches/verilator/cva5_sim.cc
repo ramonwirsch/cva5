@@ -1,6 +1,8 @@
-#include <stdlib.h>
+
+#include <cstdlib>
 #include <iostream>
 #include <fstream>
+#include <fcntl.h>
 #include "verilated.h"
 #include "verilated_vcd_c.h"
 #include "Vcva5_sim.h"
@@ -13,11 +15,17 @@ CVA5Tracer *cva5Tracer;
             return cva5Tracer->get_cycle_count();
 }
 
+int openPort(char * port)  {
+	int fd = open(port, O_RDWR | O_NOCTTY | O_NDELAY | O_NONBLOCK);
+	return fd;
+}
+
 //#define TRACE_ON
 using namespace std;
 int main(int argc, char **argv) {
     ofstream logFile, sigFile, pcFile;
     ifstream programFile;
+    int uartFile = 0;
 
 	// Initialize Verilators variables
 	Verilated::commandArgs(argc, argv);
@@ -42,7 +50,14 @@ int main(int argc, char **argv) {
     	exit(EXIT_FAILURE);
     }
 
-
+	if (argc >= 7 argv[6]) {
+		cout << "Found parameter for Uart-File, will try to open the serial interface for UART: " << argv[6] << ".\n";
+		uartFile = openPort(argv[6]);
+		if (uartFile == -1) {
+			cout << "Failed to open uartFile: " << argv[6] << endl;
+			exit(EXIT_FAILURE);
+		}
+	}
 
     logFile.open (argv[1]);
     sigFile.open (argv[2]);
@@ -68,6 +83,10 @@ int main(int argc, char **argv) {
     if (pcFile.is_open()) {
         cva5Tracer->set_pc_file(&pcFile);
     }
+
+    if (uartFile) {
+		cva5Tracer->set_uart_file(uartFile);
+	}
 
     #ifdef TRACE_ON
         cva5Tracer->start_tracer(argv[4]);

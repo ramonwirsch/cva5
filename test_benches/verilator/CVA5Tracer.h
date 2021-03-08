@@ -22,9 +22,10 @@
 
 #ifndef CVA5Tracer_H
 #define CVA5Tracer_H
-#include <stdlib.h>
+#include <cstdlib>
 #include <iostream>
 #include <iterator>
+#include <termios.h>
 #include "verilated.h"
 #include "verilated_vcd_c.h"
 #include "Vcva5_sim.h"
@@ -91,6 +92,9 @@ public:
   void start_tracer(const char *trace_file);
   uint64_t get_cycle_count();
 
+  void set_uart_file(int uartFile);
+  void reset_uart();
+
   //DDR Simulation
   Vcva5_sim *tb;
 private:
@@ -103,6 +107,9 @@ private:
   std::ofstream* pcFile;
   bool logPC = false;
 
+  int uartFile;
+  bool hasUartFile = false;
+  bool uartReadPending = false;
   int reset_length = 64;
   int stall_limit = 2000;
   int stall_count = 0;
