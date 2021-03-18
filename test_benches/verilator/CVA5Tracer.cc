@@ -135,13 +135,19 @@ void CVA5Tracer::reset_uart() {
 		uartOptions.c_cc[VTIME] = 0;
 
 		// choosing Raw input
-		uartOptions.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
+        uartOptions.c_iflag &= ~(IGNBRK | BRKINT | ICRNL | INLCR | PARMRK | INPCK | ISTRIP | IXON);
+
+        // no line processing
+        uartOptions.c_lflag &= ~(ECHO | ECHONL | ICANON | IEXTEN | ISIG);
 
 		// choosing Raw output
 		uartOptions.c_oflag &= ~OPOST;
 
+		// Turn off character processing
+	    uartOptions.c_cflag &= ~(CSIZE | PARENB);
+	    uartOptions.c_cflag |= (CS8 | CLOCAL | CREAD);
 		// enabling Software flow control
-		uartOptions.c_cflag |= (CLOCAL | CREAD); // enable receiver
+		//uartOptions.c_cflag |= (CLOCAL | CREAD); // enable receiver
 		tcsetattr(this->uartFile, TCSAFLUSH, &uartOptions); // Flush input/output buffer and apply changes
 	}
 	tb->read_uart = 0;
