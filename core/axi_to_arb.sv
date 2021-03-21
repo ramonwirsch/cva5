@@ -186,7 +186,7 @@ module axi_to_arb
 
 
     //Done when read request sent, or slave ack on write data
-    assign pop = (axi_arvalid & axi_arready & ~read_modify_write) | (axi_awvalid & axi_awready);
+    assign pop = (axi_arvalid & axi_arready & ~read_modify_write) | (axi_wvalid & axi_wready);
     assign l2.request_pop = pop;
 
     //read channel
