@@ -164,7 +164,8 @@ void CVA5Tracer::update_UART() {
 	if (this->hasUartFile) {
 		// write handling (testbench to tty)
 		if (tb->write_uart) {
-			write(this->uartFile, &tb->uart_write_byte, 1);
+			int len = write(this->uartFile, &tb->uart_write_byte, 1);
+			(void) len;
 		}
 
 		// clean up old read if needed
