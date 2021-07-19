@@ -1,4 +1,3 @@
-
 #include <cstdlib>
 #include <iostream>
 #include <fstream>
@@ -11,46 +10,47 @@
 CVA5Tracer *cva5Tracer;
 
 //For time index on assertions
- double sc_time_stamp () {
-            return cva5Tracer->get_cycle_count();
+double sc_time_stamp() {
+	return cva5Tracer->get_cycle_count();
 }
 
-int openPort(char * port)  {
+int openPort(char *port) {
 	int fd = open(port, O_RDWR | O_NOCTTY | O_NDELAY | O_NONBLOCK);
 	return fd;
 }
 
 //#define TRACE_ON
 using namespace std;
+
 int main(int argc, char **argv) {
-    ofstream logFile, sigFile, pcFile;
-    ifstream programFile;
-    int uartFile = 0;
+	ofstream logFile, sigFile, pcFile;
+	ifstream programFile;
+	int uartFile = 0;
 
 	// Initialize Verilators variables
 	Verilated::commandArgs(argc, argv);
 
-    if (!argv[1]) {
-    	cout << "Missing log file name.\n";
-    	exit(EXIT_FAILURE);
-    }
+	if(!argv[1]) {
+		cout << "Missing log file name.\n";
+		exit(EXIT_FAILURE);
+	}
 
-    if (!argv[2]) {
-    	cout << "Missing signature file name.\n";
-    	exit(EXIT_FAILURE);
-    }
+	if(!argv[2]) {
+		cout << "Missing signature file name.\n";
+		exit(EXIT_FAILURE);
+	}
 
-    if (!argv[3]) {
-    	cout << "Missing program file name.\n";
-    	exit(EXIT_FAILURE);
-    }
+	if(!argv[3]) {
+		cout << "Missing program file name.\n";
+		exit(EXIT_FAILURE);
+	}
 
-    if (!argv[4]) {
-    	cout << "Missing trace log file name.\n";
-    	exit(EXIT_FAILURE);
-    }
+	if(!argv[4]) {
+		cout << "Missing trace log file name.\n";
+		exit(EXIT_FAILURE);
+	}
 
-	if (argc >= 7 argv[6]) {
+	if (argc >= 7 && argv[6]) {
 		cout << "Found parameter for Uart-File, will try to open the serial interface for UART: " << argv[6] << ".\n";
 		uartFile = openPort(argv[6]);
 		if (uartFile == -1) {
@@ -59,10 +59,10 @@ int main(int argc, char **argv) {
 		}
 	}
 
-    logFile.open (argv[1]);
-    sigFile.open (argv[2]);
-    //printf("HW INIT:%s \n", argv[3]);
-    programFile.open (argv[3]);
+	logFile.open(argv[1]);
+	sigFile.open(argv[2]);
+	//printf("HW INIT:%s \n", argv[3]);
+	programFile.open(argv[3]);
 
     if (!logFile.is_open()) {
     	cout << "Failed to open logfile: " << argv[1] << endl;
@@ -72,6 +72,10 @@ int main(int argc, char **argv) {
     	cout << "Failed to open sigFile: " << argv[2] << endl;
     	exit(EXIT_FAILURE);
     }
+	if (!programFile.is_open()) {
+		cout << "Failed to open programFile: " << argv[3] << endl;
+		exit(EXIT_FAILURE);
+	}
 
 	// Create an instance of our module under test
     cva5Tracer = new CVA5Tracer(programFile);
@@ -89,13 +93,13 @@ int main(int argc, char **argv) {
 	}
 
     #ifdef TRACE_ON
-        cva5Tracer->start_tracer(argv[4]);
+	cva5Tracer->start_tracer(argv[4]);
 	#endif
 	cva5Tracer->reset();
 	cout << "--------------------------------------------------------------\n";
 	cout << "   Starting Simulation, logging to " << argv[1] << "\n";
 	cout << "--------------------------------------------------------------\n";
-    cout << flush;
+	cout << flush;
 
 	// Tick the clock until we are done
     bool sig_phase_complete = false;
