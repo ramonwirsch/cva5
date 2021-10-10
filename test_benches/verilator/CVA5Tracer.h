@@ -77,6 +77,7 @@ static const int numEvents = arraySize(eventNames);
 class CVA5Tracer {
 public:
   CVA5Tracer(std::ifstream& programFile);
+  CVA5Tracer(std::ifstream& scratchFile, std::ifstream& ramFile);
   ~CVA5Tracer();
   bool check_if_instruction_retired(uint32_t instruction);
   bool has_terminated();

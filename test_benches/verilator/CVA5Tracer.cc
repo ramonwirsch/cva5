@@ -158,7 +158,9 @@ void CVA5Tracer::reset_uart() {
 void CVA5Tracer::update_UART() {
 	if (tb->write_uart) {
 		std::cout <<  tb->uart_write_byte << std::flush;
-		*logFile << tb->uart_write_byte;
+        if (logFile) {
+		    *logFile << tb->uart_write_byte;
+        }
 	}
 
 	if (this->hasUartFile) {
@@ -201,56 +203,62 @@ void CVA5Tracer::update_memory() {
 
 
 void CVA5Tracer::tick() {
-        cycle_count++;
+    cycle_count++;
 
-		tb->clk = 1;
-		tb->eval();
-        #ifdef TRACE_ON
-            verilatorWaveformTracer->dump(vluint32_t(cycle_count));
-        #endif
-        cycle_count++;
+    tb->clk = 1;
+    tb->eval();
+    #ifdef TRACE_ON
+    if (verilatorWaveformTracer) {
+        verilatorWaveformTracer->dump(vluint32_t(cycle_count));
+    }
+    #endif
+    cycle_count++;
 
-        tb->clk = 0;
-        tb->eval();
-        #ifdef TRACE_ON
-            verilatorWaveformTracer->dump(vluint32_t(cycle_count));
-        #endif
+    tb->clk = 0;
+    tb->eval();
+    #ifdef TRACE_ON
+    if (verilatorWaveformTracer) {
+        verilatorWaveformTracer->dump(vluint32_t(cycle_count));
+    }
+    #endif
 
-        if (check_if_instruction_retired(BENCHMARK_START_COLLECTION_NOP)) {
-            reset_stats();
-            collect_stats = true;
-        }
-        else if (check_if_instruction_retired(BENCHMARK_RESUME_COLLECTION_NOP)) {
-            collect_stats = true;
-        }
-        else if (check_if_instruction_retired(BENCHMARK_END_COLLECTION_NOP)) {
-            collect_stats = false;
-        }
+    if (check_if_instruction_retired(BENCHMARK_START_COLLECTION_NOP)) {
+        reset_stats();
+        collect_stats = true;
+    }
+    else if (check_if_instruction_retired(BENCHMARK_RESUME_COLLECTION_NOP)) {
+        collect_stats = true;
+    }
+    else if (check_if_instruction_retired(BENCHMARK_END_COLLECTION_NOP)) {
+        collect_stats = false;
+    }
 
 
-        tb->clk = 1;
-        tb->eval();
-        axi_ddr->step();
-        update_stats();
-        update_UART();
-        update_memory();
+    tb->clk = 1;
+    tb->eval();
+    axi_ddr->step();
+    update_stats();
+    update_UART();
+    update_memory();
 
-	#ifdef TRACE_ON
+
+    if (logPC) {
         for (int i =0; i < tb->NUM_RETIRE_PORTS; i++) {
-            if (logPC && tb->retire_ports_valid[i]) {
-            	*pcFile << std::hex << tb->retire_ports_pc[i] << std::endl;
+            if (tb->retire_ports_valid[i]) {
+                *pcFile << std::hex << tb->retire_ports_pc[i] << std::endl;
             }
         }
-	#endif
+    }
 
 }
 
 
 void CVA5Tracer::start_tracer(const char *trace_file) {
 	#ifdef TRACE_ON
-		verilatorWaveformTracer = new VerilatedVcdC;
-		tb->trace(verilatorWaveformTracer, 99);
-		verilatorWaveformTracer->open(trace_file);
+    Verilated::traceEverOn(true);
+    verilatorWaveformTracer = new VerilatedVcdC;
+    tb->trace(verilatorWaveformTracer, 99);
+    verilatorWaveformTracer->open(trace_file);
 	#endif
 }
 
@@ -262,14 +270,10 @@ uint64_t CVA5Tracer::get_cycle_count() {
 
 
 CVA5Tracer::CVA5Tracer(std::ifstream& programFile) {
-	#ifdef TRACE_ON
-		Verilated::traceEverOn(true);
-	#endif
-
 
     tb = new Vcva5_sim;
 
-   #ifdef DDR_LOAD_FILE
+    #ifdef DDR_LOAD_FILE
         axi_ddr = new axi_ddr_sim(DDR_INIT_FILE,DDR_FILE_STARTING_LOCATION,DDR_FILE_NUM_BYTES);
     #else
         axi_ddr = new axi_ddr_sim(programFile, tb);
@@ -284,11 +288,28 @@ CVA5Tracer::CVA5Tracer(std::ifstream& programFile) {
 }
 
 
+CVA5Tracer::CVA5Tracer(std::ifstream& scratchFile, std::ifstream& ramFile) {
+
+	tb = new Vcva5_sim;
+
+	axi_ddr = new axi_ddr_sim(ramFile, tb);
+
+	scratchFile.clear();
+	scratchFile.seekg(0, ios::beg);
+	mem = new SimMem(scratchFile, 128);
+
+	instruction_r = mem->read(tb->instruction_bram_addr);
+	data_out_r = 0;
+}
+
 CVA5Tracer::~CVA5Tracer() {
 	#ifdef TRACE_ON
+    if (verilatorWaveformTracer) {
 		verilatorWaveformTracer->flush();
 		verilatorWaveformTracer->close();
+    }
 	#endif
+    
 	delete mem;
 	delete tb;
 }
