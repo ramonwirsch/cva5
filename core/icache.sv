@@ -149,7 +149,12 @@ module icache
             .update(tag_update),
             .stage1_adv(fetch_sub.new_request & icache_on),
             .tag_hit(tag_hit),
-            .tag_hit_way(tag_hit_way)
+            .tag_hit_way(tag_hit_way),
+
+            .inv_addr({l1_response.inv_addr, 2'b00}),
+            .stage1_inv(1'b0),
+            .extern_inv(l1_response.inv_valid),
+            .extern_inv_complete(l1_response.inv_ack)
     );
 
     ////////////////////////////////////////////////////
