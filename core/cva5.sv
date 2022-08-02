@@ -193,6 +193,9 @@ module cva5
     //LS
     wb_packet_t wb_snoop;
 
+    // Instr. Invalidation
+    instruction_invalidation_interface instr_inv ();
+
     //Trace Interface Signals
     logic tr_early_branch_correction;
     logic tr_operand_stall;
@@ -474,6 +477,16 @@ module cva5
         .wb (unit_wb[UNIT_IDS.ALU])
     );
 
+    logic instr_inv_enabled;
+    logic [MAX_INSTR_INV_QUEUES-1:0] instr_inv_queues_not_empty;
+
+    generate if (CONFIG.INSTRUCTION_COHERENCY) begin: gen_instr_inv
+        assign instr_inv_queues_not_empty = '0; //TODO actually put the instr_inv_unit here
+    end else begin
+        assign instr_inv_queues_not_empty = '0;
+    end
+    endgenerate
+
     load_store_unit #(.CONFIG(CONFIG))
     load_store_unit_block (
         .clk (clk),
@@ -499,7 +512,8 @@ module cva5
         .exception (exception[LS_EXCEPTION]),
         .load_store_status(load_store_status),
         .wb (unit_wb[UNIT_IDS.LS]),
-        .tr_load_conflict_delay (tr_load_conflict_delay)
+        .tr_load_conflict_delay (tr_load_conflict_delay),
+        .instr_inv(instr_inv)
     );
 
     generate if (CONFIG.INCLUDE_S_MODE) begin : gen_dtlb_dmmu
@@ -554,9 +568,14 @@ module cva5
             .retire(retire),
             .retire_ids(retire_ids),
             .s_interrupt(s_interrupt),
-            .m_interrupt(m_interrupt)
+            .m_interrupt(m_interrupt),
+            .instr_inv_enabled(instr_inv_enabled),
+            .instr_inv_queues_not_empty(instr_inv_queues_not_empty)
         );
-    end endgenerate
+    end else begin
+        assign instr_inv_enabled = 0;
+    end
+    endgenerate
 
     gc_unit #(.CONFIG(CONFIG))
     gc_unit_block (

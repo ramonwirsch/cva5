@@ -139,6 +139,7 @@ package cva5_config;
         branch_predictor_config_t BP;
         //Writeback Options
         int unsigned NUM_WB_GROUPS;
+        bit INSTRUCTION_COHERENCY;
     } cpu_config_t;
 
     //Function to generate derived cache parameters
@@ -249,7 +250,8 @@ package cva5_config;
             RAS_ENTRIES : 8
         },
         //Writeback Options
-        NUM_WB_GROUPS : 2
+        NUM_WB_GROUPS : 2,
+        INSTRUCTION_COHERENCY : 0
     };
 
     ////////////////////////////////////////////////////
@@ -332,5 +334,9 @@ package cva5_config;
     //When no exceptions are expected in a simulation, turn on this flag
     //to convert any exceptions into assertions
     localparam DEBUG_CONVERT_EXCEPTIONS_INTO_ASSERTIONS = 0;
+
+    // controls how many bits are reserved to indicate Instruction-Invalidation-Queue state
+    // as this is placed into the upper 16 bits of its CSR Reg, it can be at most 16. But for now there are at most 2 queues: Branch-Predictor, ICache
+    localparam MAX_INSTR_INV_QUEUES = 2;
 
 endpackage

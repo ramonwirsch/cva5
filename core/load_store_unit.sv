@@ -65,7 +65,8 @@ module load_store_unit
         output load_store_status_t load_store_status,
         unit_writeback_interface.unit wb,
 
-        output logic tr_load_conflict_delay
+        output logic tr_load_conflict_delay,
+        instruction_invalidation_interface.source instr_inv
     );
 
     localparam NUM_SUB_UNITS = int'(CONFIG.INCLUDE_DLOCAL_MEM) + int'(CONFIG.INCLUDE_PERIPHERAL_BUS) + int'(CONFIG.INCLUDE_DCACHE);
@@ -366,7 +367,8 @@ module load_store_unit
         end
     endgenerate
 
-    generate if (CONFIG.INCLUDE_DCACHE) begin : gen_ls_dcache
+    generate
+        if (CONFIG.INCLUDE_DCACHE) begin : gen_ls_dcache
             logic uncacheable;
             assign sub_unit_address_match[DCACHE_ID] = dcache_addr_utils.address_range_check(shared_inputs.addr);
             assign uncacheable = uncacheable_utils.address_range_check(shared_inputs.addr);
@@ -385,6 +387,16 @@ module load_store_unit
                 .uncacheable (uncacheable),
                 .ls (sub_unit[DCACHE_ID])
             );
+
+            assign instr_inv.inv_addr = sub_unit[DCACHE_ID].addr;
+
+            if (CONFIG.INSTRUCTION_COHERENCY) begin: gen_ls_inv_source
+                assign instr_inv.inv_valid = sub_unit[DCACHE_ID].we & sub_unit[DCACHE_ID].new_request;
+            end else begin
+                assign instr_inv.inv_valid = '0;
+            end
+        end else begin
+            assign instr_inv.inv_valid = '0;
         end
     endgenerate
 

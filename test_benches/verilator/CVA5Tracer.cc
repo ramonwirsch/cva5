@@ -24,8 +24,6 @@
 #include <termios.h>
 #include "CVA5Tracer.h"
 
-//#define TRACE_ON
-
 bool CVA5Tracer::check_if_instruction_retired(uint32_t instruction) {
     bool result = false;
     for (int i =0; i < tb->NUM_RETIRE_PORTS; i++) {
@@ -91,6 +89,7 @@ void CVA5Tracer::print_stats() {
     for (int i=0; i < numEvents; i++)
        std::cout << "    " << eventNames[i] << ":" << event_counters[i] << std::endl;
 
+    std::cout << "    user_application_ticks:" << ticks << std::endl;
 	std::cout << "--------------------------------------------------------------\n\n";
 }
 
@@ -207,17 +206,35 @@ void CVA5Tracer::tick() {
 
     tb->clk = 1;
     tb->eval();
-    #ifdef TRACE_ON
+    #if VM_TRACE == 1
     if (verilatorWaveformTracer) {
-        verilatorWaveformTracer->dump(vluint32_t(cycle_count));
+        bool now_enabled;
+        if (!trace_active) {
+            if (check_if_instruction_retired(TRACE_ENABLE_NOP)) {
+                trace_active = true;
+                now_enabled = true;   
+            }
+        } else {
+            if (check_if_instruction_retired(TRACE_DISABLE_NOP)) {
+                trace_active = false;
+                now_enabled = false;
+            }
+        }
+        if (now_enabled) {
+            verilatorWaveformTracer->dump(vluint32_t(cycle_count));
+        }
     }
     #endif
+    if (check_if_instruction_retired(APP_TICKS_RESET_NOP)) {
+        ticks = 0;
+    }
     cycle_count++;
+    ticks++;
 
     tb->clk = 0;
     tb->eval();
-    #ifdef TRACE_ON
-    if (verilatorWaveformTracer) {
+    #if VM_TRACE == 1
+    if (verilatorWaveformTracer && trace_active) {
         verilatorWaveformTracer->dump(vluint32_t(cycle_count));
     }
     #endif
@@ -254,12 +271,15 @@ void CVA5Tracer::tick() {
 
 
 void CVA5Tracer::start_tracer(const char *trace_file) {
-	#ifdef TRACE_ON
+	#if VM_TRACE == 1
     Verilated::traceEverOn(true);
     verilatorWaveformTracer = new VerilatedVcdC;
     tb->trace(verilatorWaveformTracer, 99);
     verilatorWaveformTracer->open(trace_file);
-	#endif
+    trace_active = true;
+	#else
+    cout << "Trace support was not compiled, ignoring!" << endl;
+    #endif
 }
 
 
@@ -268,6 +288,9 @@ uint64_t CVA5Tracer::get_cycle_count() {
     return cycle_count;
 }
 
+uint64_t CVA5Tracer::get_ticks() {
+    return ticks;
+}
 
 CVA5Tracer::CVA5Tracer(std::ifstream& programFile) {
 
@@ -303,10 +326,12 @@ CVA5Tracer::CVA5Tracer(std::ifstream& scratchFile, std::ifstream& ramFile) {
 }
 
 CVA5Tracer::~CVA5Tracer() {
-	#ifdef TRACE_ON
+	#if VM_TRACE == 1
     if (verilatorWaveformTracer) {
 		verilatorWaveformTracer->flush();
 		verilatorWaveformTracer->close();
+        delete verilatorWaveformTracer;
+        verilatorWaveformTracer = nullptr;
     }
 	#endif
     

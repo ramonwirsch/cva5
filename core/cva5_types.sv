@@ -315,4 +315,9 @@ package cva5_types;
         cva5_trace_events_t events;
     } trace_outputs_t;
 
+
+    typedef enum logic [11:0] {
+        MINSTR_INV_CSR = 12'h7C0
+    } cva5_csr_reg_addr_t;
+
 endpackage

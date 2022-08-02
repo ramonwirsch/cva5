@@ -377,3 +377,24 @@ interface register_file_issue_interface #(parameter NUM_WB_GROUPS = 2);
         input data, inuse
     );
 endinterface
+
+interface instruction_invalidation_interface;
+    logic [31:0] inv_addr;
+    logic inv_valid;
+    logic inv_ready;
+    //logic invalidation_ack;
+    //logic enable;
+    //logic fifo_empty;
+
+    modport source(
+        output inv_addr, inv_valid,
+        input inv_ready
+    );
+    modport sink(
+        input inv_addr, inv_valid,
+        output inv_ready
+    );
+    //modport dcache (input invalidation_ack, enable, output invalidation_addr, invalidation_valid, fifo_empty);
+    //modport consumer (output invalidation_ack, input invalidation_addr, invalidation_valid);
+    //modport csr_reg (input fifo_empty, output enable);
+endinterface : instruction_invalidation_interface

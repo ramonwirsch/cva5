@@ -24,6 +24,7 @@ module  illegal_instruction_checker
 
     import cva5_config::*;
     import riscv_types::*;
+    import cva5_types::*;
 
     # (
         parameter cpu_config_t CONFIG = EXAMPLE_CONFIG
@@ -149,7 +150,7 @@ module  illegal_instruction_checker
         MVENDORID, MARCHID, MIMPID, MHARTID,
         MSTATUS, MISA, MEDELEG, MIDELEG, MIE, MTVEC, MCOUNTEREN,
         MSCRATCH, MEPC, MCAUSE, MTVAL, MIP,
-        MCYCLE, MINSTRET, MCYCLEH, MINSTRETH
+        MCYCLE, MINSTRET, MCYCLEH, MINSTRETH, MINSTR_INV_CSR
     };
 
     assign csr_addr_supervisor = instruction[31:20] inside {

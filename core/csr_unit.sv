@@ -71,7 +71,11 @@ module csr_unit
 
         //External
         input interrupt_t s_interrupt,
-        input interrupt_t m_interrupt
+        input interrupt_t m_interrupt,
+
+        // Custom CSR Reg wires
+        output logic instr_inv_enabled,
+        input logic [MAX_INSTR_INV_QUEUES-1:0] instr_inv_queues_not_empty
         );
 
     logic busy;
@@ -206,6 +210,9 @@ module csr_unit
     logic[XLEN-1:0] mtval;
 
     logic[XLEN-1:0] mscratch;
+
+    // Read respone to INSTR_INV_CSR reads.
+    logic [XLEN-1:0] instr_inv_state;
 
     //Virtualization support: TSR, TW, TVM unused
     //Extension context status: SD, FS, XS unused
@@ -515,6 +522,20 @@ generate if (CONFIG.INCLUDE_M_MODE) begin : gen_csr_m_mode
             mscratch <= updated_csr;
     end
 
+    ////////////////////////////////////////////////////
+    // INSTRUCTION INVALIDATION
+    always_ff @(posedge clk) begin
+        if (rst)
+            instr_inv_enabled <= 0;
+        else if (mwrite_en(MINSTR_INV_CSR)) begin
+            instr_inv_enabled <= updated_csr[0];
+        end
+    end
+
+    assign instr_inv_state = {{(16-MAX_INSTR_INV_QUEUES){1'b0}}, instr_inv_queues_not_empty, 15'b0, instr_inv_enabled};
+
+end else begin
+    assign instr_inv_enabled = '0;
 end
 endgenerate
 
@@ -720,6 +741,9 @@ endgenerate
             TIMEH : selected_csr = 32'(mcycle[CONFIG.CSRS.NON_STANDARD_OPTIONS.COUNTER_W-1:XLEN]);
             INSTRETH : selected_csr = 32'(minst_ret[CONFIG.CSRS.NON_STANDARD_OPTIONS.COUNTER_W-1:XLEN]);
             [12'hC83 : 12'hC9F] : selected_csr = 0;
+
+            //Machine Custom Instructions
+            MINSTR_INV_CSR: selected_csr = CONFIG.INCLUDE_M_MODE ? instr_inv_state : 0;
 
             default : selected_csr = 0;
         endcase

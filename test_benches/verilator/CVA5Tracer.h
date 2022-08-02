@@ -31,12 +31,17 @@
 #include "Vcva5_sim.h"
 #include "SimMem.h"
 #include "AXI_DDR_simulation/axi_ddr_sim.h"
-//#define TRACE_ON
 
+// ADDI NOPS: 
+#define TRACE_ENABLE_NOP 0x01000013U
+#define TRACE_DISABLE_NOP 0x01100013U
+#define APP_TICKS_RESET_NOP 0x01200013U
 #define COMPLIANCE_SIG_PHASE_NOP 0x00B00013U
 #define BENCHMARK_START_COLLECTION_NOP 0x00C00013U
 #define BENCHMARK_END_COLLECTION_NOP 0x00D00013U
 #define BENCHMARK_RESUME_COLLECTION_NOP 0x00E00013U
+
+#
 #define ERROR_TERMINATION_NOP 0x00F00013U
 #define SUCCESS_TERMINATION_NOP 0x00A00013U
 
@@ -69,7 +74,8 @@ static const char * const eventNames[] = {
     "load_conflict_delay",
     "rs1_forwarding_needed",
     "rs2_forwarding_needed",
-    "rs1_and_rs2_forwarding_needed"
+    "rs1_and_rs2_forwarding_needed",
+    "invalidation_fifo_full_dcache_stall"
 };
 static const int numEvents = arraySize(eventNames);
 
@@ -92,6 +98,7 @@ public:
   void set_pc_file(std::ofstream* pcFile);
   void start_tracer(const char *trace_file);
   uint64_t get_cycle_count();
+  uint64_t get_ticks();
 
   void set_uart_file(int uartFile);
   void reset_uart();
@@ -101,7 +108,7 @@ public:
 private:
   axi_ddr_sim * axi_ddr;
   SimMem *mem;
-#ifdef TRACE_ON
+#if VM_TRACE == 1
 		VerilatedVcdC	*verilatorWaveformTracer;
 #endif
   std::ofstream* logFile;
@@ -114,10 +121,18 @@ private:
   int reset_length = 64;
   int stall_limit = 2000;
   int stall_count = 0;
+  /**
+   * counts time-intervals of simulation. Needed for VCD. Needs to be strictly monotone.
+   */
   uint64_t cycle_count = 0;
+  /**
+   * counts actual clock-cycles for the application. Can be reset be Hint-NOP
+   */
+  uint64_t ticks = 0;
   uint64_t event_counters[numEvents];
 
   bool collect_stats = false;
+  bool trace_active = true;
   bool program_complete = false;
 
   void update_stats();

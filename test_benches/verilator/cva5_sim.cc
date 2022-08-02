@@ -175,13 +175,13 @@ int main(int argc, char **argv) {
 			exit(EXIT_FAILURE);
 		}
 	} else if (opts.hwInitMode == Seperate) {
-		cout << "Seperate firmware files are used for the memories: " << opts.scratchInitFile << " and " << opts.ramInitFile << endl;
+		cout << "Seperate firmware files are used for the memories! Scratch:" << opts.scratchInitFile << " and RAM:" << opts.ramInitFile << endl;
 		if (!scratchFile.is_open()) {
-			cout << "Failed to open scratch File: " << opts.scratchInitFile << endl;
+			cout << "Failed to open Scratch File: " << opts.scratchInitFile << endl;
 			exit(EXIT_FAILURE);
 		}
 		if (!ramFile.is_open()) {
-			cout << "Failed to open ram File: " << opts.ramInitFile << endl;
+			cout << "Failed to open RAM File: " << opts.ramInitFile << endl;
 			exit(EXIT_FAILURE);
 		}
 	}
@@ -227,20 +227,14 @@ int main(int argc, char **argv) {
 		if (uartFile > 0) {
 			cva5Tracer->set_uart_file(uartFile);
 		} else {
-			cout << "Failed to open uartFile: " << opts.uartFile << endl;
+			cout << "Failed to open Uart File: " << opts.uartFile << endl;
 			exit(EXIT_FAILURE);
 		}
 	}
 
-    #ifdef TRACE_ON
 	if (opts.traceFile) {
 		cva5Tracer->start_tracer(opts.traceFile);
 	}
-	#else
-	if (opts.traceFile) {
-		cout << "Trace support was not compiled, ignoring!" << endl;
-	}
-	#endif
 	cva5Tracer->reset();
 	cout << "--------------------------------------------------------------\n";
 	cout << "   Starting Simulation";

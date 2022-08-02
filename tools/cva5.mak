@@ -10,8 +10,8 @@ CVA5_INCLUDED_SIM_SRCS = $(addprefix $(VERILATOR_DIR)/, cva5_sim.cc AXI_DDR_simu
 #Tracing: Set to True or False
 TRACE_ENABLE?=False
 
-#Default Reset Vector
-DEFAULT_RESET_VECTOR ?= 0x80000000
+#Used for DDR-Sim to read init-file to correct offset (since the file itself does not include this address)
+DDR_START_ADDR ?= 0x40000000
 
 #Simulation Binary Name
 CVA5_SIM_DIR?=$(VERILATOR_DIR)/build
@@ -48,18 +48,20 @@ delay_seed = DELAY_SEED=$(DELAY_SEED)
 #ddr_start_loc = DDR_FILE_STARTING_LOCATION=$(DDR_FILE_STARTING_LOCATION)
 #ddr_num_bytes = DDR_FILE_NUM_BYTES=$(DDR_FILE_NUM_BYTES)
 
-reset_vector_opt = DEFAULT_RESET_VECTOR=$(DEFAULT_RESET_VECTOR)
+ddr_start_addr = DDR_START_ADDR=$(DDR_START_ADDR)
 
 CFLAGS = -g0 -O3 -std=c++14 -march=native -D$(ddr_size_def) -D$(page_size_def) -D$(max_inflight_read_requests) -D$(max_inflight_write_requests)\
-	-D$(mix_delay_read) -D$(max_delay_read) -D$(min_delay_write) -D$(max_delay_write) -D$(delay_seed) -D$(reset_vector_opt)
+	-D$(mix_delay_read) -D$(max_delay_read) -D$(min_delay_write) -D$(max_delay_write) -D$(delay_seed) -D$(ddr_start_addr)
 
 	#(to-do)-D$(ddr_init_file) -D$(ddr_start_loc) -D$(ddr_num_bytes)
 
 #Verilator
 ################################################################################
 VERILATOR_LINT_IGNORE= -Wno-LITENDIAN -Wno-SYMRSVDWORD
+
+# C++ Code can detect Verilator-intrinsic VM_TRACE == 1, set by --trace option, instead of an additional one that depends on --trace (because of needed data types only existing then)
 ifeq ($(TRACE_ENABLE), True)
-	VERILATOR_CFLAGS =  --trace --trace-structs --CFLAGS "$(CFLAGS)  -D TRACE_ON"
+	VERILATOR_CFLAGS =  --trace --trace-structs --CFLAGS "$(CFLAGS)"
 else
 	VERILATOR_CFLAGS =   --CFLAGS  "$(CFLAGS)"
 endif
@@ -93,10 +95,10 @@ $(CVA5_SIM): $(CVA5_HW_SRCS) $(CVA5_SIM_SRCS)
 	mkdir -p $(CVA5_SIM_DIR)
 	verilator --cc --exe --Mdir $(CVA5_SIM_DIR) -DENABLE_SIMULATION_ASSERTIONS --assert \
 		-o cva5-sim \
+		--build -j 8 \
 		$(VERILATOR_LINT_IGNORE) $(VERILATOR_CFLAGS) \
 		$(CVA5_SIM_SRCS) \
 		$(CVA5_HW_SRCS) $(VERILATOR_DIR)/cva5_sim.sv --top-module cva5_sim
-	$(MAKE) -C $(CVA5_SIM_DIR) -f Vcva5_sim.mk
 
 .PHONY: clean-cva5-sim
 clean-cva5-sim:

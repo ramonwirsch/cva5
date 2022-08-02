@@ -171,6 +171,8 @@ package riscv_types;
         DCSR = 12'h7B0,
         DPC = 12'h7B1,
         DSCRATCH = 12'h7B2
+
+        // Machine Custom CSRs 0x7C0 - 0x7FF read/write
     } csr_reg_addr_t;
 
     typedef enum logic [2:0] {

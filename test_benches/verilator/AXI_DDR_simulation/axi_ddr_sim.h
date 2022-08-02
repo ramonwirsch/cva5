@@ -106,7 +106,7 @@ struct addr_calculation_parameters{
 		//Write Response Queue
 		queue<AXI_write_response_channel_signals> w_res_channel_queue;
 
-		unsigned starting_location = DEFAULT_RESET_VECTOR;
+		unsigned starting_location = DDR_START_ADDR;
 };
 
 #endif
