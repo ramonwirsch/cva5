@@ -51,7 +51,11 @@ module itag_banks
         output logic[CONFIG.ICACHE.WAYS-1:0] tag_hit_way
         );
 
-    typedef logic [SCONFIG.TAG_W : 0] itag_entry_t;
+    typedef struct packed{
+        logic valid;
+        logic [SCONFIG.TAG_W-1:0] tag;
+    } itag_entry_t;
+
 
     function logic[SCONFIG.TAG_W-1:0] getTag(logic[31:0] addr);
         return addr[2+SCONFIG.SUB_LINE_ADDR_W+SCONFIG.LINE_ADDR_W +: SCONFIG.TAG_W];
