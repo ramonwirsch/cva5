@@ -30,7 +30,8 @@ module cva5
     import cva5_types::*;
 
     #(
-        parameter cpu_config_t CONFIG = EXAMPLE_CONFIG
+        parameter cpu_config_t CONFIG = EXAMPLE_CONFIG,
+        parameter EXTERNAL_INSTR_INV_TARGETS = 0
     )
 
     (
@@ -50,7 +51,8 @@ module cva5
         l2_requester_interface.master l2,
 
         input interrupt_t s_interrupt,
-        input interrupt_t m_interrupt
+        input interrupt_t m_interrupt,
+        instruction_invalidation_interface.distributor external_instr_inv_targets [EXTERNAL_INSTR_INV_TARGETS]
         );
 
     ////////////////////////////////////////////////////
@@ -87,6 +89,11 @@ module cva5
     localparam int unsigned NUM_WB_UNITS_GROUP_1 = 1;//ALU
     localparam int unsigned NUM_WB_UNITS_GROUP_2 = 1 + int'(CONFIG.INCLUDE_CSRS) + int'(CONFIG.INCLUDE_MUL) + int'(CONFIG.INCLUDE_DIV);//LS
     localparam int unsigned NUM_WB_UNITS = NUM_WB_UNITS_GROUP_1 + NUM_WB_UNITS_GROUP_2;
+
+    localparam int unsigned NUM_INSTR_INV_TARGETS = ((CONFIG.INSTRUCTION_COHERENCY)? (int'(CONFIG.INCLUDE_ICACHE) + int'(CONFIG.INCLUDE_BRANCH_PREDICTOR) + EXTERNAL_INSTR_INV_TARGETS) : (0));
+    localparam int unsigned INSTR_INV_TARGET_ICACHE = 0;
+    localparam int unsigned INSTR_INV_TARGET_BRANCH_PRED = int'(CONFIG.INCLUDE_ICACHE);
+    localparam int unsigned INSTR_INV_TARGET_FIRST_EXTERNAL = int'(CONFIG.INCLUDE_ICACHE) + int'(CONFIG.INCLUDE_BRANCH_PREDICTOR);
 
     ////////////////////////////////////////////////////
     //Connecting Signals
@@ -195,6 +202,7 @@ module cva5
 
     // Instr. Invalidation
     instruction_invalidation_interface instr_inv ();
+    instruction_invalidation_queued instr_inv_q [INSTR_INV_TARGET_FIRST_EXTERNAL] ();
 
     //Trace Interface Signals
     logic tr_early_branch_correction;
@@ -287,6 +295,8 @@ module cva5
         .current_exception_unit (current_exception_unit)
     );
 
+
+
     ////////////////////////////////////////////////////
     // Fetch
     fetch # (.CONFIG(CONFIG))
@@ -314,7 +324,8 @@ module cva5
         .l1_request (l1_request[L1_ICACHE_ID]), 
         .l1_response (l1_response[L1_ICACHE_ID]), 
         .exception (1'b0),
-        .tr_early_branch_correction (tr_early_branch_correction)
+        .tr_early_branch_correction (tr_early_branch_correction),
+        .instr_inv(instr_inv_q[INSTR_INV_TARGET_ICACHE])
     );
 
     branch_predictor #(.CONFIG(CONFIG))
@@ -323,7 +334,8 @@ module cva5
         .rst (rst),
         .bp (bp),
         .br_results (br_results),
-        .ras (ras)
+        .ras (ras),
+        .instr_inv(instr_inv_q[INSTR_INV_TARGET_BRANCH_PRED])
     );
 
     ras # (.CONFIG(CONFIG))
@@ -478,12 +490,42 @@ module cva5
     );
 
     logic instr_inv_enabled;
-    logic [MAX_INSTR_INV_QUEUES-1:0] instr_inv_queues_not_empty;
+    logic [NUM_INSTR_INV_TARGETS-1:0] instr_inv_outstanding;
+    logic instr_inv_stall;
 
     generate if (CONFIG.INSTRUCTION_COHERENCY) begin: gen_instr_inv
-        assign instr_inv_queues_not_empty = '0; //TODO actually put the instr_inv_unit here
+        instruction_invalidation_interface instr_inv_tgt [INSTR_INV_TARGET_FIRST_EXTERNAL] (); // only allocate for internal ones
+        logic [NUM_INSTR_INV_TARGETS-1:0] instr_inv_ready;
+
+        genvar i;
+        for (i=0; i < NUM_INSTR_INV_TARGETS; i++) begin : gen_inv_instr_tgt_map
+            if (i < INSTR_INV_TARGET_FIRST_EXTERNAL) begin
+                assign instr_inv_tgt[i].inv_addr = instr_inv.inv_addr;
+                assign instr_inv_tgt[i].inv_valid = instr_inv.inv_valid;
+                assign instr_inv_outstanding[i] = instr_inv_tgt[i].inv_outstanding;
+                assign instr_inv_ready[i] = instr_inv_tgt[i].inv_ready;
+
+                instruction_invalidation_queue #(
+                    .DEPTH(CONFIG.INSTR_INV_QUEUE_DEPTH)
+                ) queue (
+                    .clk(clk),
+                    .rst(rst),
+                    .source(instr_inv_tgt[i]),
+                    .sink(instr_inv_q[i])
+                );
+
+            end else begin
+                assign external_instr_inv_targets[i - INSTR_INV_TARGET_FIRST_EXTERNAL].inv_addr = instr_inv.inv_addr;
+                assign external_instr_inv_targets[i - INSTR_INV_TARGET_FIRST_EXTERNAL].inv_valid = instr_inv.inv_valid;
+                assign instr_inv_outstanding[i] = external_instr_inv_targets[i - INSTR_INV_TARGET_FIRST_EXTERNAL].inv_outstanding;
+                assign instr_inv_ready[i] = external_instr_inv_targets[i - INSTR_INV_TARGET_FIRST_EXTERNAL].inv_ready;
+            end
+        end
+        assign instr_inv.inv_ready = &instr_inv_ready;
     end else begin
-        assign instr_inv_queues_not_empty = '0;
+        assign instr_inv_outstanding = '0; // so that there are no stalls
+
+        assign instr_inv_q[0].inv_valid = '0; // so that icache and branch-pred dont invalidate random stuff
     end
     endgenerate
 
@@ -513,7 +555,9 @@ module cva5
         .load_store_status(load_store_status),
         .wb (unit_wb[UNIT_IDS.LS]),
         .tr_load_conflict_delay (tr_load_conflict_delay),
-        .instr_inv(instr_inv)
+        .instr_inv(instr_inv),
+        .instr_inv_en(instr_inv_enabled),
+        .instr_inv_stall(instr_inv_stall)
     );
 
     generate if (CONFIG.INCLUDE_S_MODE) begin : gen_dtlb_dmmu
@@ -545,8 +589,10 @@ module cva5
     endgenerate
 
     generate if (CONFIG.INCLUDE_CSRS) begin : gen_csrs
-        csr_unit # (.CONFIG(CONFIG))
-        csr_unit_block (
+        csr_unit # (
+            .CONFIG(CONFIG),
+            .NUM_INSTR_INV_TARGETS(NUM_INSTR_INV_TARGETS)
+        ) csr_unit_block (
             .clk(clk),
             .rst(rst),
             .csr_inputs (csr_inputs),
@@ -570,7 +616,7 @@ module cva5
             .s_interrupt(s_interrupt),
             .m_interrupt(m_interrupt),
             .instr_inv_enabled(instr_inv_enabled),
-            .instr_inv_queues_not_empty(instr_inv_queues_not_empty)
+            .instr_inv_outstanding(instr_inv_outstanding)
         );
     end else begin
         assign instr_inv_enabled = 0;
@@ -684,6 +730,7 @@ module cva5
             tr.events.rs1_forwarding_needed <= tr_rs1_forwarding_needed;
             tr.events.rs2_forwarding_needed <= tr_rs2_forwarding_needed;
             tr.events.rs1_and_rs2_forwarding_needed <= tr_rs1_and_rs2_forwarding_needed;
+            tr.events.instr_inv_stall <= instr_inv_stall;
             tr.instruction_pc_dec <= tr_instruction_pc_dec;
             tr.instruction_data_dec <= tr_instruction_data_dec;
         end

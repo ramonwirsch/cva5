@@ -140,6 +140,9 @@ package cva5_config;
         //Writeback Options
         int unsigned NUM_WB_GROUPS;
         bit INSTRUCTION_COHERENCY;
+        // how big is the queue in front of icache and branch-pred for invalidations. Only relevant when INSTRUCTION_COHERENCY is enabled
+        // Must be power of 2 if used
+        int INSTR_INV_QUEUE_DEPTH;
     } cpu_config_t;
 
     //Function to generate derived cache parameters
@@ -251,7 +254,8 @@ package cva5_config;
         },
         //Writeback Options
         NUM_WB_GROUPS : 2,
-        INSTRUCTION_COHERENCY : 0
+        INSTRUCTION_COHERENCY : 0,
+        INSTR_INV_QUEUE_DEPTH : 0
     };
 
     ////////////////////////////////////////////////////
@@ -334,9 +338,5 @@ package cva5_config;
     //When no exceptions are expected in a simulation, turn on this flag
     //to convert any exceptions into assertions
     localparam DEBUG_CONVERT_EXCEPTIONS_INTO_ASSERTIONS = 0;
-
-    // controls how many bits are reserved to indicate Instruction-Invalidation-Queue state
-    // as this is placed into the upper 16 bits of its CSR Reg, it can be at most 16. But for now there are at most 2 queues: Branch-Predictor, ICache
-    localparam MAX_INSTR_INV_QUEUES = 2;
 
 endpackage

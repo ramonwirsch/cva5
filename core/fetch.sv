@@ -62,6 +62,9 @@ module fetch
         l1_arbiter_request_interface.master l1_request,
         l1_arbiter_return_interface.master l1_response,
 
+        // Instruction invalidation
+        instruction_invalidation_queued.sink instr_inv,
+
         //Trace Interface
         output logic tr_early_branch_correction
     );
@@ -278,7 +281,8 @@ module fetch
             .icache_on (icache_on),
             .l1_request (l1_request),
             .l1_response (l1_response),
-            .fetch_sub (sub_unit[ICACHE_ID])
+            .fetch_sub (sub_unit[ICACHE_ID]),
+            .instr_inv(instr_inv)
         );
     end
     endgenerate

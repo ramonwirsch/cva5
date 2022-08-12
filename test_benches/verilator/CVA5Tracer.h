@@ -75,7 +75,7 @@ static const char * const eventNames[] = {
     "rs1_forwarding_needed",
     "rs2_forwarding_needed",
     "rs1_and_rs2_forwarding_needed",
-    "invalidation_fifo_full_dcache_stall"
+    "instr_inv_stall"
 };
 static const int numEvents = arraySize(eventNames);
 

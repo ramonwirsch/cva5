@@ -66,7 +66,9 @@ module load_store_unit
         unit_writeback_interface.unit wb,
 
         output logic tr_load_conflict_delay,
-        instruction_invalidation_interface.source instr_inv
+        instruction_invalidation_interface.source instr_inv,
+        input logic instr_inv_en,
+        output logic instr_inv_stall
     );
 
     localparam NUM_SUB_UNITS = int'(CONFIG.INCLUDE_DLOCAL_MEM) + int'(CONFIG.INCLUDE_PERIPHERAL_BUS) + int'(CONFIG.INCLUDE_DCACHE);
@@ -258,7 +260,7 @@ module load_store_unit
 
     ////////////////////////////////////////////////////
     //Primary Control Signals
-    assign units_ready = &unit_ready & (~unit_switch_hold);
+    assign units_ready = &unit_ready & (~unit_switch_hold) & (~instr_inv_stall);
     assign load_complete = |unit_data_valid;
 
     assign issue.ready = (~tlb_on | tlb.ready) & (~lsq.full) & (~fence_hold) & (~exception.valid);
@@ -388,11 +390,13 @@ module load_store_unit
                 .ls (sub_unit[DCACHE_ID])
             );
 
-            assign instr_inv.inv_addr = sub_unit[DCACHE_ID].addr;
+            assign instr_inv.inv_addr = sub_unit[DCACHE_ID].addr[31:2];
 
             if (CONFIG.INSTRUCTION_COHERENCY) begin: gen_ls_inv_source
-                assign instr_inv.inv_valid = sub_unit[DCACHE_ID].we & sub_unit[DCACHE_ID].new_request;
+                assign instr_inv_stall = instr_inv_en & shared_inputs.store & ~instr_inv.inv_ready;
+                assign instr_inv.inv_valid = instr_inv_en & sub_unit[DCACHE_ID].we & sub_unit[DCACHE_ID].new_request;
             end else begin
+                assign instr_inv_stall = '0;
                 assign instr_inv.inv_valid = '0;
             end
         end else begin

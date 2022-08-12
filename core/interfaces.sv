@@ -379,12 +379,13 @@ interface register_file_issue_interface #(parameter NUM_WB_GROUPS = 2);
 endinterface
 
 interface instruction_invalidation_interface;
-    logic [31:0] inv_addr;
+    /**
+     * only word addressed!
+    **/
+    logic [31:2] inv_addr;
     logic inv_valid;
     logic inv_ready;
-    //logic invalidation_ack;
-    //logic enable;
-    //logic fifo_empty;
+    logic inv_outstanding;
 
     modport source(
         output inv_addr, inv_valid,
@@ -392,9 +393,28 @@ interface instruction_invalidation_interface;
     );
     modport sink(
         input inv_addr, inv_valid,
-        output inv_ready
+        output inv_ready, inv_outstanding
     );
-    //modport dcache (input invalidation_ack, enable, output invalidation_addr, invalidation_valid, fifo_empty);
-    //modport consumer (output invalidation_ack, input invalidation_addr, invalidation_valid);
-    //modport csr_reg (input fifo_empty, output enable);
+    modport distributor(
+        output inv_addr, inv_valid,
+        input inv_ready, inv_outstanding
+    );
 endinterface : instruction_invalidation_interface
+
+interface instruction_invalidation_queued;
+    /**
+     * only word addressed!
+    **/
+    logic [31:2] inv_addr;
+    logic inv_valid;
+    logic inv_completed;
+
+    modport source(
+        output inv_addr, inv_valid,
+        input inv_completed
+    );
+    modport sink(
+        input inv_addr, inv_valid,
+        output inv_completed
+    );
+endinterface : instruction_invalidation_queued

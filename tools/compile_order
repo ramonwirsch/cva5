@@ -29,6 +29,7 @@ core/toggle_memory_set.sv
 
 core/intel/intel_byte_enable_ram.sv
 core/xilinx/xilinx_byte_enable_ram.sv
+core/xilinx/xilinx_tdp_ram_wf.sv
 core/byte_en_BRAM.sv 
 
 core/csr_unit.sv  
@@ -90,6 +91,8 @@ core/axi_to_arb.sv
 core/instruction_metadata_and_id_management.sv
 
 core/l1_arbiter.sv  
+
+core/instruction_invalidation_queue.sv
 
 core/cva5.sv
 

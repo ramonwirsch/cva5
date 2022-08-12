@@ -38,7 +38,10 @@ module icache
         l1_arbiter_request_interface.master l1_request,
         l1_arbiter_return_interface.master l1_response,
 
-        memory_sub_unit_interface.responder fetch_sub
+        memory_sub_unit_interface.responder fetch_sub,
+        instruction_invalidation_queued.sink instr_inv //TODO this allows only internal invalidations.
+        //for external invalidations this would need to be wired through the l1_arbiter. l1_response already has matching fields for this. But we do not need that functionality
+        // l1 arbiter would need to be extended, because inv_queues are currently in l2-arbiter. But instr invalidation requires queues between writes to L1D and Branch-Pred & L1I
     );
 
     localparam derived_cache_config_t SCONFIG = get_derived_cache_params(CONFIG, CONFIG.ICACHE, CONFIG.ICACHE_ADDR);
@@ -151,10 +154,10 @@ module icache
             .tag_hit(tag_hit),
             .tag_hit_way(tag_hit_way),
 
-            .inv_addr({l1_response.inv_addr, 2'b00}),
+            .inv_addr({instr_inv.inv_addr, 2'b00}),
             .stage1_inv(1'b0),
-            .extern_inv(l1_response.inv_valid),
-            .extern_inv_complete(l1_response.inv_ack)
+            .extern_inv(instr_inv.inv_valid),
+            .extern_inv_complete(instr_inv.inv_completed)
     );
 
     ////////////////////////////////////////////////////

@@ -30,27 +30,70 @@ module branch_predictor_ram
         parameter C_DEPTH = 512
     )
     (
+       // Global signals
         input logic clk,
         input logic rst,
-        input logic [$clog2(C_DEPTH)-1:0] write_addr,
-        input logic write_en,
-        input logic [$clog2(C_DEPTH)-1:0] read_addr,
-        input logic read_en,
-        input logic [C_DATA_WIDTH-1:0] write_data,
-        output logic [C_DATA_WIDTH-1:0] read_data
+
+        // Port A (read only)
+        input logic read_en_a,
+        input logic[$clog2(C_DEPTH)-1:0] read_addr_a,
+        output logic[C_DATA_WIDTH-1:0] read_data_a,
+
+        // Port B (read and write)
+        input logic en_b,
+        input logic we_b,
+        input logic[$clog2(C_DEPTH)-1:0] addr_b,
+        input logic[C_DATA_WIDTH-1:0] data_in_b,
+        output logic[C_DATA_WIDTH-1:0] data_out_b
     );
-    (* ram_style = "block" *)logic [C_DATA_WIDTH-1:0] branch_ram [C_DEPTH-1:0];
+
+    // internal wires for B write to A read bypass
+    logic[C_DATA_WIDTH-1:0] out_a;
+
+    // internal regs for B write to A read bypass
+    logic simultaneous_access_r;
+    logic[$clog2(C_DEPTH)-1:0] read_addr_a_r;
+    logic[$clog2(C_DEPTH)-1:0] addr_b_r;
+    logic[C_DATA_WIDTH-1:0] data_bypass_b_r;
+
+    //implementation
     ////////////////////////////////////////////////////
-    //Implementation
-    initial branch_ram = '{default: 0};
+
+    //Branch Predictors Write first RAM needed to handle the following potential collision:
+    //An update from a miss occurs on the same cycle as a subsequent fetch to the same instruction
+
+    //enable bypass in case of a write to the same address as port A reads from. (done this way to break critical path in addr-match calculation path).
+    assign read_data_a = simultaneous_access_r && (read_addr_a_r == addr_b_r) ? data_bypass_b_r : out_a;
+
+    //store info for bypass from port B to port A in registers to be used in next clock cycle if needed.
     always_ff @(posedge clk) begin
-        if (write_en)
-            branch_ram[write_addr] <= write_data;
+        simultaneous_access_r <= we_b & read_en_a;
+        read_addr_a_r <= read_addr_a;
+        addr_b_r <= addr_b;
+        data_bypass_b_r <= data_in_b;
     end
-    always_ff @(posedge clk) begin
-        if (read_en)
-            read_data <= branch_ram[read_addr];
-    end
+
+    // inferred ram implementation (true-dual-ported in write first mode)
+    // channel a is used for reading only, channel b has read and write capabilities
+    xilinx_tdp_ram_wf#(
+        .C_DATA_WIDTH(C_DATA_WIDTH),
+        .C_DEPTH(C_DEPTH)
+    ) branch_ram (
+        .clk(clk),
+
+        .en_a(read_en_a),
+        .we_a(0), // port A read only
+        .addr_a(read_addr_a),
+        .data_in_a('0),
+        .data_out_a(out_a),
+
+        .en_b(en_b),
+        .we_b(we_b),
+        .addr_b(addr_b),
+        .data_in_b(data_in_b),
+        .data_out_b(data_out_b)
+    );
+
     ////////////////////////////////////////////////////
     //End of Implementation
     ////////////////////////////////////////////////////

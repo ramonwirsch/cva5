@@ -301,6 +301,9 @@ package cva5_types;
         logic rs2_forwarding_needed;
         logic rs1_and_rs2_forwarding_needed;
 
+        //Instr. Invalidation
+        logic instr_inv_stall;
+
     } cva5_trace_events_t;
 
     typedef struct packed {

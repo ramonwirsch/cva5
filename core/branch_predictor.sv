@@ -35,7 +35,9 @@ module branch_predictor
         input logic rst,
         branch_predictor_interface.branch_predictor bp,
         input branch_results_t br_results,
-        ras_interface.branch_predictor ras
+        ras_interface.branch_predictor ras,
+
+        instruction_invalidation_queued.sink instr_inv
     );
 
     //BP tag width can be reduced, based on memory size, when virtual address
@@ -82,6 +84,8 @@ module branch_predictor
 
     branch_table_entry_t [CONFIG.BP.WAYS-1:0] if_entry;
     branch_table_entry_t ex_entry;
+    branch_table_entry_t tag_update_data;
+    branch_table_entry_t [CONFIG.BP.WAYS-1:0] tag_maybe_to_invalidate;
 
     typedef struct packed{
         branch_predictor_metadata_t branch_predictor_metadata;
@@ -93,17 +97,60 @@ module branch_predictor
     branch_metadata_t branch_metadata_ex;
 
     logic branch_predictor_direction_changed;
-    logic [31:0] new_jump_addr;
+    logic [31:0] target_update_data;
     logic [CONFIG.BP.WAYS-1:0][31:0] predicted_pc;
 
     logic [CONFIG.BP.WAYS-1:0] tag_matches;
+    logic [CONFIG.BP.WAYS-1:0] inv_tag_matches;
     logic [CONFIG.BP.WAYS-1:0] replacement_way;
     logic [CONFIG.BP.WAYS-1:0] tag_update_way;
     logic [CONFIG.BP.WAYS-1:0] target_update_way;
+    logic [CONFIG.BP.WAYS-1:0] invalidate_way_now;
     logic [$clog2(CONFIG.BP.WAYS > 1 ? CONFIG.BP.WAYS : 2)-1:0] hit_way;
     logic tag_match;
     logic use_predicted_pc;
+
+    // incoming update by observing control-flow
+    logic observation_update;
+    logic inv_pending;
+    logic miss_or_invalidate;
+
+    // internal address to update
+    logic [BRANCH_ADDR_W-1:0] update_internal_addr;
+
+
     /////////////////////////////////////////
+    // we have received a new observation that we will save
+    assign observation_update = br_results.valid;
+    // we have received an addr to invalidate in all Ways
+    assign inv_pending = CONFIG.INSTRUCTION_COHERENCY & instr_inv.inv_valid;
+    
+    generate if (CONFIG.INSTRUCTION_COHERENCY) begin : gen_insn_inv
+        logic inv_progress;
+
+        always_ff @(posedge clk) begin
+            if (rst) begin
+                inv_progress <= '0;
+            end else if (inv_pending & ~observation_update) begin
+                inv_progress <= ~inv_progress;
+            end else if (~inv_pending) begin
+                inv_progress <= '0;
+            end
+        end
+    
+        assign instr_inv.inv_completed = inv_pending & inv_progress & ~observation_update;
+    end else begin
+        assign instr_inv.inv_completed = '0;
+    end
+    endgenerate
+
+    /////////////////////////////////////////
+    // muxing of branch updates and invalidation logic
+    assign miss_or_invalidate = observation_update | inv_pending;
+    assign update_internal_addr = observation_update ? br_results.pc[2 +: BRANCH_ADDR_W] : instr_inv.inv_addr[2 +: BRANCH_ADDR_W];
+
+    assign tag_update_data = observation_update ? ex_entry : '{default: 0};
+    assign target_update_data = observation_update ? br_results.target_pc : 0; // jump addr to 0, this will result in an assertion if used accidencially!
 
     genvar i;
     generate if (CONFIG.INCLUDE_BRANCH_PREDICTOR)
@@ -112,12 +159,17 @@ module branch_predictor
         tag_bank (       
             .clk            (clk),
             .rst            (rst),
-            .write_addr     (br_results.pc[2 +: BRANCH_ADDR_W]), 
-            .write_en       (tag_update_way[i]), 
-            .write_data     (ex_entry),
-            .read_addr      (bp.next_pc[2 +: BRANCH_ADDR_W]), 
-            .read_en        (bp.new_mem_request), 
-            .read_data      (if_entry[i]));
+
+            .read_addr_a    (bp.next_pc[2 +: BRANCH_ADDR_W]),  // PortA used to check for predictions / get predictions
+            .read_en_a      (bp.new_mem_request), 
+            .read_data_a    (if_entry[i]),
+
+            .en_b           (miss_or_invalidate), // PortB used to look for data that has to be invalidated & storing observations (storing has priority)
+            .addr_b         (update_internal_addr), 
+            .we_b           (tag_update_way[i]), 
+            .data_in_b      (tag_update_data),
+            .data_out_b     (tag_maybe_to_invalidate[i]) // when not writing, this is the current tag. Used to check for matches with data to invalidate
+        );
     end
     endgenerate
 
@@ -127,12 +179,16 @@ module branch_predictor
         addr_table (       
             .clk            (clk),
             .rst            (rst),
-            .write_addr(br_results.pc[2 +: BRANCH_ADDR_W]), 
-            .write_en(target_update_way[i]), 
-            .write_data(br_results.target_pc),
-            .read_addr(bp.next_pc[2 +: BRANCH_ADDR_W]), 
-            .read_en(bp.new_mem_request), 
-            .read_data(predicted_pc[i])
+
+            .read_addr_a    (bp.next_pc[2 +: BRANCH_ADDR_W]),  // PortA used to check for predictions / get predictions
+            .read_en_a      (bp.new_mem_request), 
+            .read_data_a    (predicted_pc[i]),
+
+            .en_b           (miss_or_invalidate), // PortB used to store observations
+            .addr_b         (update_internal_addr), 
+            .we_b           (target_update_way[i]), 
+            .data_in_b      (target_update_data),
+            .data_out_b     (/*unused*/)
         );
     end
     endgenerate
@@ -140,6 +196,7 @@ module branch_predictor
     generate if (CONFIG.INCLUDE_BRANCH_PREDICTOR)
     for (i=0; i<CONFIG.BP.WAYS; i++) begin : gen_branch_hit_detection
             assign tag_matches[i] = ({if_entry[i].valid, if_entry[i].tag} == {1'b1, get_tag(bp.if_pc)});
+            assign inv_tag_matches[i] = (tag_maybe_to_invalidate[i].valid & tag_maybe_to_invalidate[i].tag == get_tag({instr_inv.inv_addr, 2'b00}));
     end
     endgenerate
 
@@ -208,8 +265,9 @@ module branch_predictor
         (~branch_metadata_ex.branch_prediction_used) |
         (branch_metadata_ex.branch_predictor_metadata[1] ^ ex_entry.metadata[1]);
 
-    assign tag_update_way = {CONFIG.BP.WAYS{br_results.valid}} & (branch_metadata_ex.branch_predictor_update_way);
-    assign target_update_way = {CONFIG.BP.WAYS{branch_predictor_direction_changed}} & tag_update_way;
+    assign invalidate_way_now = ({CONFIG.BP.WAYS{~observation_update}} & inv_tag_matches);
+    assign tag_update_way = ({CONFIG.BP.WAYS{br_results.valid}} & (branch_metadata_ex.branch_predictor_update_way)) | invalidate_way_now;
+    assign target_update_way = ({CONFIG.BP.WAYS{branch_predictor_direction_changed}} & tag_update_way) | invalidate_way_now;
     ////////////////////////////////////////////////////
     //Target PC if branch flush occured
     assign bp.branch_flush_pc = br_results.target_pc;
