@@ -82,6 +82,7 @@ module xilinx_byte_enable_ram
             end
         end
     end
-    end endgenerate
+    end
+    endgenerate
 
 endmodule

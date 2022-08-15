@@ -616,6 +616,7 @@ module cva5
             .s_interrupt(s_interrupt),
             .m_interrupt(m_interrupt),
             .instr_inv_enabled(instr_inv_enabled),
+            .instr_inv_ready(instr_inv.inv_ready),
             .instr_inv_outstanding(instr_inv_outstanding)
         );
     end else begin
