@@ -259,7 +259,7 @@ int main(int argc, char **argv) {
         }
 	}
 
-	cout << "--------------------------------------------------------------\n";
+	cout << "\n--------------------------------------------------------------\n";
 	cout << "   Simulation Completed  " << cva5Tracer->get_cycle_count() << " cycles.\n";
     cva5Tracer->print_stats();
 
