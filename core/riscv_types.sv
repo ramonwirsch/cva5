@@ -170,7 +170,11 @@ package riscv_types;
         //Debug regs
         DCSR = 12'h7B0,
         DPC = 12'h7B1,
-        DSCRATCH = 12'h7B2
+        DSCRATCH = 12'h7B2,
+
+        //PMP regs
+        PMPCFGX = 12'h3A?,//allows more regs than there actually are spec'ed
+        PMPADDRX = 12'h3B?
 
         // Machine Custom CSRs 0x7C0 - 0x7FF read/write
     } csr_reg_addr_t;

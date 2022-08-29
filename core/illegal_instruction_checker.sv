@@ -150,7 +150,8 @@ module  illegal_instruction_checker
         MVENDORID, MARCHID, MIMPID, MHARTID,
         MSTATUS, MISA, MEDELEG, MIDELEG, MIE, MTVEC, MCOUNTEREN,
         MSCRATCH, MEPC, MCAUSE, MTVAL, MIP,
-        MCYCLE, MINSTRET, MCYCLEH, MINSTRETH, MINSTR_INV_CSR
+        MCYCLE, MINSTRET, MCYCLEH, MINSTRETH, MINSTR_INV_CSR,
+        PMPADDRX, PMPCFGX
     };
 
     assign csr_addr_supervisor = instruction[31:20] inside {

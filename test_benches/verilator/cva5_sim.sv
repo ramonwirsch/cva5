@@ -383,6 +383,71 @@ module cva5_sim
         end
     end
 
+
+
+    //TIMER
+    logic[63:0] time_current;
+    logic[63:0] timer_cmp_val;
+    logic interrupt_bool;
+
+    initial begin
+        time_current = 0;
+        timer_cmp_val = -1;
+        interrupt_bool = 0;
+    end
+    always_ff @(posedge clk) begin
+        time_current = time_current + 10000;
+
+        //TIMER READ
+        if(m_axi.arready == 1 && m_axi.arvalid == 1) begin
+            //lo timer
+            if(m_axi.araddr[13:0] == 8192) begin
+                //addr= 0x2000
+                m_axi.rdata <= time_current[31:0];
+             end
+           //hi timer
+            if(m_axi.araddr[13:0] == 8196) begin
+               //addr= 0x2004
+               m_axi.rdata <= time_current[63:32];
+            end
+        end
+        
+        //TIMER INTERRUPT
+        if(time_current >= timer_cmp_val) begin
+            if(interrupt_bool==0) begin
+                m_interrupt.timer = 1;
+                interrupt_bool = 1;
+            end
+            else begin
+                m_interrupt.timer = 0;
+            end
+        end
+        else begin
+            m_interrupt.timer = 0;
+            interrupt_bool = 0;
+        end
+
+        //handle overflow
+        if(&time_current == 1) begin
+            time_current = 0;
+        end
+
+
+        //TIMER CMP WRITE
+        if(m_axi.wvalid ==1 && m_axi.wready ==1) begin
+            //lo
+            if(m_axi.awaddr[13:0] == 8448) begin
+                timer_cmp_val[31:0] <= m_axi.wdata[31:0];
+            end
+            //hi
+            if(m_axi.awaddr[13:0] == 8452) begin
+                timer_cmp_val[63:32] <= m_axi.wdata[31:0];
+            end
+        end
+    end
+
+
+
     initial begin
         write_uart = 0;
         uart_write_byte = 0;
