@@ -437,10 +437,12 @@ module cva5_sim
         if(m_axi.wvalid ==1 && m_axi.wready ==1) begin
             //lo
             if(m_axi.awaddr[13:0] == 8448) begin
+                //addr= 0x2100
                 timer_cmp_val[31:0] <= m_axi.wdata[31:0];
             end
             //hi
             if(m_axi.awaddr[13:0] == 8452) begin
+                //addr= 0x2104
                 timer_cmp_val[63:32] <= m_axi.wdata[31:0];
             end
         end
