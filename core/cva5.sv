@@ -202,7 +202,7 @@ module cva5
 
     // Instr. Invalidation
     instruction_invalidation_interface instr_inv ();
-    instruction_invalidation_queued instr_inv_q [INSTR_INV_TARGET_FIRST_EXTERNAL] ();
+    instruction_invalidation_queued instr_inv_q [(INSTR_INV_TARGET_FIRST_EXTERNAL > 0)? INSTR_INV_TARGET_FIRST_EXTERNAL : 1] ();
 
     //Trace Interface Signals
     logic tr_early_branch_correction;
