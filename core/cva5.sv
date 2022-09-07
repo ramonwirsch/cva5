@@ -732,6 +732,7 @@ module cva5
             tr.events.rs2_forwarding_needed <= tr_rs2_forwarding_needed;
             tr.events.rs1_and_rs2_forwarding_needed <= tr_rs1_and_rs2_forwarding_needed;
             tr.events.instr_inv_stall <= instr_inv_stall;
+            tr.current_privilege <= current_privilege;
             tr.instruction_pc_dec <= tr_instruction_pc_dec;
             tr.instruction_data_dec <= tr_instruction_data_dec;
         end

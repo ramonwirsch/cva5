@@ -315,6 +315,7 @@ package cva5_types;
     typedef struct packed {
         logic [31:0] instruction_pc_dec;
         logic [31:0] instruction_data_dec;
+        logic [1:0] current_privilege;
         cva5_trace_events_t events;
     } trace_outputs_t;
 
