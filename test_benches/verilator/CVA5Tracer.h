@@ -82,9 +82,11 @@ static const int numEvents = arraySize(eventNames);
 //Testbench with CVA5 trace outputs on toplevel
 class CVA5Tracer {
 public:
+  CVA5Tracer();
   CVA5Tracer(std::ifstream& programFile);
   CVA5Tracer(std::ifstream& scratchFile, std::ifstream& ramFile);
   ~CVA5Tracer();
+
   bool check_if_instruction_retired(uint32_t instruction);
   bool has_terminated();
   bool has_stalled();
@@ -105,9 +107,9 @@ public:
 
   //DDR Simulation
   Vcva5_sim *tb;
-private:
   axi_ddr_sim * axi_ddr;
   SimMem *mem;
+private:
 #if VM_TRACE == 1
 		VerilatedVcdC	*verilatorWaveformTracer;
 #endif

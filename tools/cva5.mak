@@ -3,7 +3,7 @@ VERILATOR_DIR=$(CVA5_DIR)/test_benches/verilator
 
 # Sources for verilator
 CVA5_HW_SRCS = $(addprefix $(CVA5_DIR)/, $(shell cat $(CVA5_DIR)/tools/compile_order))
-CVA5_SIM_SRCS = $(addprefix $(VERILATOR_DIR)/, CVA5Tracer.cc SimMem.cc cva5_sim.cc AXI_DDR_simulation/axi_ddr_sim.cc AXI_DDR_simulation/ddr_page.cc)
+CVA5_SIM_SRCS = $(addprefix $(VERILATOR_DIR)/, CVA5Tracer.cc SimMem.cc cva5_sim.cc AXI_DDR_simulation/axi_ddr_sim.cc AXI_DDR_simulation/ddr_page.cc BaseMemoryFragmentLoader.cpp MemoryFragmentLoader.cpp)
 CVA5_INCLUDED_SIM_SRCS = $(addprefix $(VERILATOR_DIR)/, cva5_sim.cc AXI_DDR_simulation/ddr_page.cc SimMem.cc)
 
 
@@ -17,14 +17,8 @@ DDR_START_ADDR ?= 0x40000000
 CVA5_SIM_DIR?=$(VERILATOR_DIR)/build
 CVA5_SIM?=$(CVA5_SIM_DIR)/cva5-sim
 
-#(to-do)DDR Pre-Initialization
-#LOAD_DDR_FROM_FILE = False
-#DDR_FILE = "\"path_to_DDR_init_file\""
-#DDR_FILE_STARTING_LOCATION = 0
-#DDR_FILE_NUM_BYTES = 0
-
 #AXI DDR Parameters
-DDR_SIZE_GB = 4
+DDR_SIZE_GB = 1
 PAGE_SIZE_KB = 2
 MAX_READ_REQ = 8
 MAX_WRITE_REQ = $(MAX_READ_REQ)
@@ -33,6 +27,7 @@ MAX_RD_DELAY = 1
 MIN_WR_DELAY = 1
 MAX_WR_DELAY = 1
 DELAY_SEED = 867583
+LMEM_START_ADDR = 0x80000000
 ######################################################################
 ddr_size_def = DDR_SIZE=\(long\)$(DDR_SIZE_GB)*\(long\)1073741824
 page_size_def = PAGE_SIZE=\($(PAGE_SIZE_KB)*1024\)
@@ -43,17 +38,11 @@ max_delay_read = MAX_DELAY_RD=$(MAX_RD_DELAY)
 min_delay_write = MIN_DELAY_WR=$(MIN_WR_DELAY)
 max_delay_write = MAX_DELAY_WR=$(MAX_WR_DELAY)
 delay_seed = DELAY_SEED=$(DELAY_SEED)
-#(to-do)
-#ddr_init_file = DDR_INIT_FILE=$(DDR_FILE)
-#ddr_start_loc = DDR_FILE_STARTING_LOCATION=$(DDR_FILE_STARTING_LOCATION)
-#ddr_num_bytes = DDR_FILE_NUM_BYTES=$(DDR_FILE_NUM_BYTES)
 
 ddr_start_addr = DDR_START_ADDR=$(DDR_START_ADDR)
 
 CFLAGS = -g0 -O3 -std=c++14 -march=native -D$(ddr_size_def) -D$(page_size_def) -D$(max_inflight_read_requests) -D$(max_inflight_write_requests)\
-	-D$(mix_delay_read) -D$(max_delay_read) -D$(min_delay_write) -D$(max_delay_write) -D$(delay_seed) -D$(ddr_start_addr)
-
-	#(to-do)-D$(ddr_init_file) -D$(ddr_start_loc) -D$(ddr_num_bytes)
+	-D$(mix_delay_read) -D$(max_delay_read) -D$(min_delay_write) -D$(max_delay_write) -D$(delay_seed) -D$(ddr_start_addr) -DLMEM_START_ADDR=$(LMEM_START_ADDR) -I$(VERILATOR_DIR)/AXI_DDR_simulation
 
 #Verilator
 ################################################################################
@@ -99,6 +88,9 @@ $(CVA5_SIM): $(CVA5_HW_SRCS) $(CVA5_SIM_SRCS)
 		$(VERILATOR_LINT_IGNORE) $(VERILATOR_CFLAGS) \
 		$(CVA5_SIM_SRCS) \
 		$(CVA5_HW_SRCS) $(VERILATOR_DIR)/cva5_sim.sv --top-module cva5_sim
+
+.PHONY: cva5-sim
+cva5-sim: $(CVA5_SIM)
 
 .PHONY: clean-cva5-sim
 clean-cva5-sim:

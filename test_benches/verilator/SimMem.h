@@ -28,10 +28,20 @@
 
 class SimMem {
 public:
-  SimMem(std::ifstream& program, uint32_t mem_size);
+  /**
+   * in KB
+   */
+  SimMem(uint32_t mem_size);
+  SimMem(std::ifstream& initFile, uint32_t mem_size);
   ~SimMem();
+
+  void loadHwInit(std::ifstream& initFile);
+
   void write (uint32_t addr, uint32_t data, uint32_t be);
+  void writeWord(uint32_t addr, uint32_t data);
   uint32_t read (uint32_t addr);
+
+  uint32_t getMemSizeInBytes();
 private:
   uint32_t mem_size;
   uint32_t *memory;

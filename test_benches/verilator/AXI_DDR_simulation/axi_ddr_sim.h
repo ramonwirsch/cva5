@@ -52,14 +52,13 @@ struct addr_calculation_parameters{
  class axi_ddr_sim{
  	public:
 	//Functions--------------------------------------------------------------
-	//Init instructions-----------------
- 	axi_ddr_sim();
 	//Initialize DDR
  	axi_ddr_sim(Vcva5_sim * tb);
 
 	//Initialize DDR from file
  	axi_ddr_sim(string filepath, uint32_t starting_memory_location, int number_of_bytes, Vcva5_sim * tb);
- 	axi_ddr_sim(ifstream & input_memory_file, Vcva5_sim * tb);
+ 	axi_ddr_sim(ifstream & input_memory_file, uint32_t starting_memory_location, Vcva5_sim * tb);
+
  	void step();
  	int get_data(uint32_t data_address);
 
@@ -105,8 +104,6 @@ struct addr_calculation_parameters{
 		queue<AXI_write_data_channel_signals> w_data_channel_queue;
 		//Write Response Queue
 		queue<AXI_write_response_channel_signals> w_res_channel_queue;
-
-		unsigned starting_location = DDR_START_ADDR;
 };
 
 #endif

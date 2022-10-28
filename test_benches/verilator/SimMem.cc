@@ -4,17 +4,20 @@
 #include <iostream>
 #include "SimMem.h"
 
-
-
-SimMem::SimMem(std::ifstream& program, uint32_t mem_size) : mem_size(mem_size) {
+SimMem::SimMem(uint32_t mem_size) : mem_size(mem_size) {
     memory = new uint32_t[mem_size*256]();//mem_size in KB
     address_mask = (mem_size*256) - 1; //mask to prevent any out-of-bounds array access.  Assumes power-of-two memory size
+}
 
+SimMem::SimMem(std::ifstream& initFile, uint32_t mem_size) : SimMem(mem_size) {
+    loadHwInit(initFile);
+}
+
+void SimMem::loadHwInit(std::ifstream& initFile) {
     std::string line;
-    for (int i =0; (i < mem_size*256) && (std::getline(program, line)); i++) {
+    for (int i =0; (i < mem_size*256) && (std::getline(initFile, line)); i++) {
         memory[i] = std::stoul(line, 0, 16);
     }
-
 }
 
 uint32_t SimMem::read(uint32_t addr) {
@@ -37,6 +40,14 @@ void SimMem::write(uint32_t addr, uint32_t data, uint32_t be) {
 
     old_word = memory[addr & address_mask];
     memory[addr & address_mask] = (old_word & ~write_mask) | (data & write_mask);
+}
+
+void SimMem::writeWord(uint32_t addr, uint32_t data) {
+    write(addr, data, 0xF);
+}
+
+uint32_t SimMem::getMemSizeInBytes() {
+    return mem_size * 1024;
 }
 
 SimMem::~SimMem() {

@@ -7,6 +7,7 @@
 #include "verilated_vcd_c.h"
 #include "Vcva5_sim.h"
 #include "CVA5Tracer.h"
+#include "MemoryFragmentLoader.h"
 
 CVA5Tracer *cva5Tracer;
 
@@ -23,7 +24,8 @@ int openPort(char *port) {
 typedef enum {
 	None,
 	Combined,
-	Seperate
+	Seperate,
+	MemIdx
 } firmwareLoadingMode_t;
 
 struct cmdline_options {
@@ -31,6 +33,7 @@ struct cmdline_options {
 	char *signatureFile;
 	char *ramInitFile;
 	char *scratchInitFile;
+	char *memIdxFile;
 	char *traceFile;
 	char *uartFile;
 	char *pcFile;
@@ -47,6 +50,7 @@ void PrintHelp () {
 		"--hwInit       set firmware in Scratch- and RAM-Section\n"
 		"--ramInit      set firmware for RAM-Section only\n"
 		"--scratchInit  set firmware for Scratch-Section only\n"
+		"--memIdx		use memoryIdx file format, which can initialize all of memory"
 		"\n"
 		"--uart         set a UART device for the serial console to connect to\n"
 		"--help         print this help and exit\n";
@@ -68,6 +72,7 @@ void HandleArguments(int argc, char **argv, struct cmdline_options *opts) {
 			{"ramInit", required_argument, nullptr, 'r'},
 			{"scratchInit", required_argument, nullptr, 'i'},
 			{"pcFile", required_argument, nullptr, 'p'},
+			{"memIdx", required_argument, nullptr, 'm'},
 			{nullptr, no_argument, nullptr, 0}
 	};
 	firmwareLoadingMode_t loadingMode = None;
@@ -77,13 +82,14 @@ void HandleArguments(int argc, char **argv, struct cmdline_options *opts) {
 	opts->signatureFile = nullptr;
 	opts->ramInitFile = nullptr;
 	opts->scratchInitFile = nullptr;
+	opts->memIdxFile = nullptr;
 	opts->traceFile = nullptr;
 	opts->uartFile = nullptr;
 	opts->pcFile = nullptr;
 
 
 	while(true) {
-		int opt = getopt_long(argc, argv, "l:s:f:t:u:r:i:", long_opt, nullptr);
+		int opt = getopt_long(argc, argv, "l:s:f:t:u:r:i:p:m", long_opt, nullptr);
 
 		if (opt == -1) {
 			break;
@@ -136,6 +142,14 @@ void HandleArguments(int argc, char **argv, struct cmdline_options *opts) {
 			case 'p':
 				opts->pcFile = optarg;
 				break;
+			case 'm':
+				if (loadingMode == None) {
+					opts->memIdxFile = optarg;
+					loadingMode = MemIdx;
+				} else {
+					ExitWithArgumentError("use either the old --[xx]init options or memIdx");
+				}
+				break;
 			default:
 				cout << "unknown argument: " << opt << " ... stop!\n";
 				PrintHelp();
@@ -143,8 +157,8 @@ void HandleArguments(int argc, char **argv, struct cmdline_options *opts) {
 		}
 	}
 	// make sure that both init files are set!
-	if (opts->scratchInitFile == nullptr || opts->ramInitFile == nullptr || loadingMode == None) {
-		ExitWithArgumentError("use either hwInit for the firmware or ramInit and scratchInit!");
+	if (loadingMode == None) {
+		ExitWithArgumentError("use either memIdx, hwInit or ramInit & scratchInit to initialize memories!");
 	}
 
 	// set mode to struct
@@ -191,6 +205,12 @@ int main(int argc, char **argv) {
     	cva5Tracer = new CVA5Tracer(scratchFile);
 	} else if (opts.hwInitMode == Seperate) {
 		cva5Tracer = new CVA5Tracer(scratchFile,ramFile);
+	} else if (opts.hwInitMode == MemIdx) {
+		cva5Tracer = new CVA5Tracer();
+		cout << "Loading MemoryIdx: " << opts.memIdxFile << endl;
+		MemoryFragmentLoader* loader = new MemoryFragmentLoader(cva5Tracer->mem, LMEM_START_ADDR, cva5Tracer->axi_ddr, DDR_START_ADDR, DDR_START_ADDR + DDR_SIZE);
+		loader->load(opts.memIdxFile);
+		delete loader;
 	}
 
 	if (opts.logFile) {

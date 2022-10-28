@@ -292,16 +292,23 @@ uint64_t CVA5Tracer::get_ticks() {
     return ticks;
 }
 
+CVA5Tracer::CVA5Tracer() {
+    tb = new Vcva5_sim;
+
+    axi_ddr = new axi_ddr_sim(tb);
+
+    mem = new SimMem(128);
+
+    instruction_r = 0; // illegal op, should actually not be relevant
+    data_out_r = 0;
+}
+
 CVA5Tracer::CVA5Tracer(std::ifstream& programFile) {
 
     tb = new Vcva5_sim;
 
-    #ifdef DDR_LOAD_FILE
-        axi_ddr = new axi_ddr_sim(DDR_INIT_FILE,DDR_FILE_STARTING_LOCATION,DDR_FILE_NUM_BYTES);
-    #else
-        axi_ddr = new axi_ddr_sim(programFile, tb);
+    axi_ddr = new axi_ddr_sim(programFile, DDR_START_ADDR, tb);
         
-    #endif
     programFile.clear();
     programFile.seekg(0, ios::beg);
     mem = new SimMem(programFile, 128);
@@ -315,7 +322,7 @@ CVA5Tracer::CVA5Tracer(std::ifstream& scratchFile, std::ifstream& ramFile) {
 
 	tb = new Vcva5_sim;
 
-	axi_ddr = new axi_ddr_sim(ramFile, tb);
+	axi_ddr = new axi_ddr_sim(ramFile, DDR_START_ADDR, tb);
 
 	scratchFile.clear();
 	scratchFile.seekg(0, ios::beg);

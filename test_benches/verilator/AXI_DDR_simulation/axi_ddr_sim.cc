@@ -10,8 +10,13 @@
 
 using namespace	 std;
 
-axi_ddr_sim::axi_ddr_sim(Vcva5_sim * tb){
-    this->tb = tb;
+axi_ddr_sim::axi_ddr_sim(Vcva5_sim * tb) : tb(tb) {
+
+    generator = default_random_engine(DELAY_SEED);
+    read_distribution = uniform_int_distribution<int>(MIN_DELAY_RD,MAX_DELAY_RD);
+    write_distribution = uniform_int_distribution<int>(MIN_DELAY_WR,MAX_DELAY_WR);
+    
+    init_signals();
 }
 
 void axi_ddr_sim::init_signals(){
@@ -26,7 +31,7 @@ void axi_ddr_sim::init_signals(){
 }
 
 
-axi_ddr_sim::axi_ddr_sim(string filepath, uint32_t starting_memory_location, int number_of_bytes, Vcva5_sim * tb){
+axi_ddr_sim::axi_ddr_sim(string filepath, uint32_t starting_memory_location, int number_of_bytes, Vcva5_sim * tb) : axi_ddr_sim(tb) {
     ifstream input_memory_file;
     input_memory_file.open(filepath);
     string line;
@@ -44,24 +49,20 @@ axi_ddr_sim::axi_ddr_sim(string filepath, uint32_t starting_memory_location, int
         }
         ddr_pages.insert(pair<uint32_t,ddr_page>((uint32_t)(page_index*PAGE_SIZE), page));
     }
-       generator = default_random_engine(DELAY_SEED);
-       read_distribution = uniform_int_distribution<int>(MIN_DELAY_RD,MAX_DELAY_RD);
-       write_distribution = uniform_int_distribution<int>(MIN_DELAY_WR,MAX_DELAY_WR);
-    this->tb = tb;
-    init_signals();
+    
     //printf("Done AXI Initialization. %d Pages intialized\n", page_index);
     fflush(stdout);
 }
 
 
 
-axi_ddr_sim::axi_ddr_sim(ifstream & input_memory_file, Vcva5_sim * tb){
+axi_ddr_sim::axi_ddr_sim(ifstream & input_memory_file, uint32_t starting_memory_location, Vcva5_sim * tb) : axi_ddr_sim(tb) {
     string line;
 
-    uint32_t max_pages = DDR_SIZE/PAGE_SIZE;
+    uint32_t max_pages = (starting_memory_location+DDR_SIZE)/PAGE_SIZE;
     //Parse the uniform pages
     bool not_finished = true;
-    uint32_t page_index = starting_location/PAGE_SIZE;
+    uint32_t page_index = starting_memory_location/PAGE_SIZE;
     for (; page_index < max_pages; page_index++){
      ddr_page page;
 
@@ -77,13 +78,8 @@ axi_ddr_sim::axi_ddr_sim(ifstream & input_memory_file, Vcva5_sim * tb){
         ddr_pages.insert(pair<uint32_t,ddr_page>((uint32_t)(page_index*PAGE_SIZE), page));
         fflush(stdout);
     }
-
-       generator = default_random_engine(DELAY_SEED);
-       read_distribution = uniform_int_distribution<int>(MIN_DELAY_RD,MAX_DELAY_RD);
-       write_distribution = uniform_int_distribution<int>(MIN_DELAY_WR,MAX_DELAY_WR);
-    this->tb = tb;
-    init_signals();
-    //printf("Done AXI Initialization. Started from: %u\n", starting_location);
+    
+    //printf("Done AXI Initialization. Started from: %u\n", starting_memory_location);
     fflush(stdout);
 }
 
