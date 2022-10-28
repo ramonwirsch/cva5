@@ -248,6 +248,8 @@ module cva5_sim
     local_memory_interface instruction_bram();
     local_memory_interface data_bram();
 
+    instruction_invalidation_interface external_instr_inv_targets [1] ();
+
     //    assign m_axi.arready = bus_axi_arready;
     //    assign bus_axi_arvalid = m_axi.arvalid;
     //    assign bus_axi_araddr = m_axi.araddr;
@@ -297,7 +299,7 @@ module cva5_sim
     assign data_bram_data_in = data_bram.data_in;
     assign data_bram.data_out = data_bram_data_out;
 
-    cva5 #(.CONFIG(EXAMPLE_CONFIG)) cpu(.*, .l2(l2[0]));
+    cva5 #(.CONFIG(EXAMPLE_CONFIG), .EXTERNAL_INSTR_INV_TARGETS(1)) cpu(.*, .l2(l2[0]));
 
     //read channel
     logic[3:0] read_counter;

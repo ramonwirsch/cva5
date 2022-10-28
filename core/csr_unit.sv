@@ -526,28 +526,34 @@ generate if (CONFIG.INCLUDE_M_MODE) begin : gen_csr_m_mode
 
     ////////////////////////////////////////////////////
     // INSTRUCTION INVALIDATION
-    logic instr_inv_desired_enabled;
 
-    always_ff @(posedge clk) begin
-        if (rst) begin
-            instr_inv_desired_enabled <= 0;
-            instr_inv_enabled <= 0;
-        end else if (mwrite_en(MINSTR_INV_CSR)) begin
-            instr_inv_desired_enabled <= updated_csr[0];
-            if (updated_csr[0]) begin // actually only turn it off, if we are no longer stalling due to still pending invalidations
-                instr_inv_enabled <= updated_csr[0];
-            end else if (instr_inv_ready) begin
-                instr_inv_enabled <= updated_csr[0];
-            end
-        end else if (~instr_inv_desired_enabled & instr_inv_enabled) begin
-            if (instr_inv_ready) begin // if we could not turn off immediately, check every cycle we are not written to, to finalize disabling invalidation
+    if (CONFIG.INSTRUCTION_COHERENCY) begin : instr_inv_gen
+        logic instr_inv_desired_enabled;
+
+        always_ff @(posedge clk) begin
+            if (rst) begin
+                instr_inv_desired_enabled <= 0;
                 instr_inv_enabled <= 0;
+            end else if (mwrite_en(MINSTR_INV_CSR)) begin
+                instr_inv_desired_enabled <= updated_csr[0];
+                if (updated_csr[0]) begin // actually only turn it off, if we are no longer stalling due to still pending invalidations
+                    instr_inv_enabled <= updated_csr[0];
+                end else if (instr_inv_ready) begin
+                    instr_inv_enabled <= updated_csr[0];
+                end
+            end else if (~instr_inv_desired_enabled & instr_inv_enabled) begin
+                if (instr_inv_ready) begin // if we could not turn off immediately, check every cycle we are not written to, to finalize disabling invalidation
+                    instr_inv_enabled <= 0;
+                end
             end
         end
+
+        assign instr_inv_state[15:0] = {15'b0, instr_inv_desired_enabled};
+        assign instr_inv_state[31:16] = {{16-NUM_INSTR_INV_TARGETS {1'b0}}, instr_inv_outstanding};
+    end else begin
+        assign instr_inv_enabled = 'b0;
+        assign instr_inv_state = 'b0;
     end
-
-    assign instr_inv_state = {{(16-NUM_INSTR_INV_TARGETS){1'b0}}, instr_inv_outstanding, 15'b0, instr_inv_desired_enabled};
-
 end else begin
     assign instr_inv_enabled = '0;
 end
