@@ -158,7 +158,7 @@ void BaseMemoryFragmentLoader::loadFragment(MemoryFragment &frag) {
 
     cout << "Loading MemoryFrag " << frag.initPath << ": starting at 0x" << hex << frag.initFileOffset << ", " << dec << frag.size << " bytes" << endl;
 
-    if (frag.initPath == "/dev/null") { // filling with 0
+    if (frag.initPath == "/dev/zero") { // filling with 0
         auto endAddr = frag.startAddr + frag.size;
         for (uint64_t addr = frag.startAddr; addr < endAddr; addr += 4) {
             writeWord(static_cast<uint32_t>(addr), 0);
