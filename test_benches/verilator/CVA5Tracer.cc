@@ -25,44 +25,29 @@
 #include "CVA5Tracer.h"
 
 bool CVA5Tracer::check_if_instruction_retired(uint32_t instruction) {
-    bool result = false;
+    return check_if_instruction_retired(instruction, 0xFFFFFFFFU) != 0;
+}
+
+uint32_t CVA5Tracer::check_if_instruction_retired(uint32_t pattern, uint32_t mask) {
     for (int i =0; i < tb->NUM_RETIRE_PORTS; i++) {
-        result |= (tb->retire_ports_instruction[i] == instruction) && tb->retire_ports_valid[i];
+        if (tb->retire_ports_valid[i]) {
+            uint32_t insn = tb->retire_ports_instruction[i];
+            if ((insn & mask) == pattern) {
+                return insn;
+            }
+        }
     }
-    return result;
+    return 0;
 }
 
 
 bool CVA5Tracer::has_terminated() {
-
-    if (check_if_instruction_retired(ERROR_TERMINATION_NOP)) {
-        std::cout << "\n\nError!!!!\n\n";
-        return true;
-    }
-    //Custom nop for regular termination
-    program_complete |= check_if_instruction_retired(SUCCESS_TERMINATION_NOP);
-
-    if (program_complete && tb->store_queue_empty)
-        return true;
-
-    return false;
+    return terminated;
 }
 
 
 bool CVA5Tracer::has_stalled() {
-    if (!tb->instruction_issued) {
-        if (stall_count > stall_limit) {
-            stall_count = 0;
-            std::cout << "\n\nError!!!!\n";
-            std::cout << "Stall of " << stall_limit << " cycles detected!\n\n";
-            return true;
-		} else {
-			stall_count++;
-		}
-	}
-    else 
-        stall_count=0;
-	return false;
+	return stalling;
 }
 
 bool CVA5Tracer::store_queue_empty() {
@@ -96,6 +81,12 @@ void CVA5Tracer::print_stats() {
 
 
 void CVA5Tracer::reset() {
+    terminated = false;
+    terminating = false;
+    stalling = false;
+    stall_count = 0;
+    userAppResponse = -100;
+
     tb->clk = 0;
     tb->rst = 1;
     for (int i=0; i <reset_length; i++){
@@ -206,28 +197,12 @@ void CVA5Tracer::tick() {
 
     tb->clk = 1;
     tb->eval();
+
     #if VM_TRACE == 1
-    if (verilatorWaveformTracer) {
-        bool now_enabled;
-        if (!trace_active) {
-            if (check_if_instruction_retired(TRACE_ENABLE_NOP)) {
-                trace_active = true;
-                now_enabled = true;   
-            }
-        } else {
-            if (check_if_instruction_retired(TRACE_DISABLE_NOP)) {
-                trace_active = false;
-                now_enabled = false;
-            }
-        }
-        if (now_enabled) {
-            verilatorWaveformTracer->dump(vluint32_t(cycle_count));
-        }
+    if (verilatorWaveformTracer && trace_active) {
+        verilatorWaveformTracer->dump(vluint32_t(cycle_count));
     }
     #endif
-    if (check_if_instruction_retired(APP_TICKS_RESET_NOP)) {
-        ticks = 0;
-    }
     cycle_count++;
     ticks++;
 
@@ -239,24 +214,17 @@ void CVA5Tracer::tick() {
     }
     #endif
 
-    if (check_if_instruction_retired(BENCHMARK_START_COLLECTION_NOP)) {
-        reset_stats();
-        collect_stats = true;
-    }
-    else if (check_if_instruction_retired(BENCHMARK_RESUME_COLLECTION_NOP)) {
-        collect_stats = true;
-    }
-    else if (check_if_instruction_retired(BENCHMARK_END_COLLECTION_NOP)) {
-        collect_stats = false;
-    }
-
-
     tb->clk = 1;
     tb->eval();
     axi_ddr->step();
     update_stats();
     update_UART();
     update_memory();
+
+
+    checkForTerminationAndMagicNops();
+
+    checkForStalls();
 
 
     if (logPC) {
@@ -267,6 +235,82 @@ void CVA5Tracer::tick() {
         }
     }
 
+}
+
+void CVA5Tracer::checkForStalls() {
+    if (!tb->instruction_issued) {
+        if (stall_count > stall_limit) {
+            stalling = true;
+            stall_count = 0;
+            std::cout << "\n\nError!!!!\n";
+            std::cout << "Stall of " << stall_limit << " cycles detected!\n\n";
+		} else {
+			stall_count++;
+		}
+	} else {
+        stall_count = 0;
+    }
+}
+
+void CVA5Tracer::set_terminate_on_user_exit(bool terminate) {
+    terminateOnUserExit = terminate;
+}
+
+
+void CVA5Tracer::checkForTerminationAndMagicNops() {
+    if (terminating && tb->store_queue_empty) { // await empty store queue, so that memory reflects arch-state
+        terminated = true;
+    }
+
+    for (int i =0; i < tb->NUM_RETIRE_PORTS; i++) {
+        if (tb->retire_ports_valid[i]) {
+            uint32_t insn = tb->retire_ports_instruction[i];
+
+            if (insn == INFINITE_LOOP_INSN) {
+
+                terminating = true;
+            } else if ((insn & MAGIC_NOP_MASK) == MAGIC_NOP_PATTERN) {
+                uint32_t magicNumber = MAGIC_NOP_NUMBER(insn);
+
+                if (magicNumber == MAGIC_TRACE_ENABLE) {
+                    if (verilatorWaveformTracer) {
+                        trace_active = true;
+                    }
+                } else if (magicNumber == MAGIC_TRACE_DISABLE) {
+                    if (verilatorWaveformTracer) {
+                        trace_active = false;
+                    }
+                } else if (magicNumber == MAGIC_TICKS_RESET) {
+                    ticks = 0;
+                } else if (magicNumber == MAGIC_STAT_COLLECTION_START) {
+                    reset_stats();
+                    collect_stats = true;
+                } else if (magicNumber == MAGIC_STAT_COLLECTION_RESUME) {
+                    collect_stats = true;
+                } else if (magicNumber == MAGIC_STAT_COLLECTION_END) {
+                    collect_stats = false;
+                } else if (magicNumber == MAGIC_USER_APP_START) {
+                    userAppResponse = -10;
+                } else if (magicNumber == MAGIC_USER_APP_EXIT_SUCCESS) {
+                    userAppResponse = 0;
+                    if (terminateOnUserExit) {
+                        std::cout << "\n\nUser App Exited\n\n";
+                        terminating = true;
+                    }
+                } else if (magicNumber == MAGIC_USER_APP_EXIT_ERROR) {
+                    std::cout << "\n\nUser App Error!!!!\n\n";
+                    userAppResponse = 0xF;
+                    if (terminateOnUserExit) {
+                        terminating = true;
+                    }
+                }
+            }
+        }
+    }
+}
+
+int CVA5Tracer::get_user_app_response() {
+    return userAppResponse;
 }
 
 

@@ -38,9 +38,10 @@ struct cmdline_options {
 	char *uartFile;
 	char *pcFile;
 	firmwareLoadingMode_t hwInitMode;
+	int terminateOnUserExit;
 };
 
-void PrintHelp () {
+void printHelp () {
 	std::cout <<
 		"parameters with '*' are mandatory!\n"
 		"--log          set a logfile\n"
@@ -53,17 +54,18 @@ void PrintHelp () {
 		"--memIdx		use memoryIdx file format, which can initialize all of memory"
 		"\n"
 		"--uart         set a UART device for the serial console to connect to\n"
+		"--terminateOnUserExit      stops similuation as soon as one of the USER_APP_EXIT MAGIC NOPS is executed. Otherwise simulation will run until crash or infinite loop\n"
 		"--help         print this help and exit\n";
 }
 
-void ExitWithArgumentError(const char *text) {
+void exitWithArgumentError(const char *text) {
 	cout << text << "\n";
-	PrintHelp();
+	printHelp();
 	exit(EXIT_FAILURE);
 }
 
-void HandleArguments(int argc, char **argv, struct cmdline_options *opts) {
-	const option long_opt[] = {
+void handleArguments(int argc, char **argv, struct cmdline_options *opts) {
+	const option long_opt[] = { // if option is present, return 'char' from getopt_long
 			{"log", required_argument, nullptr, 'l'},
 			{"sig", required_argument, nullptr, 's'},
 			{"hwInit", required_argument, nullptr, 'f'},
@@ -73,6 +75,7 @@ void HandleArguments(int argc, char **argv, struct cmdline_options *opts) {
 			{"scratchInit", required_argument, nullptr, 'i'},
 			{"pcFile", required_argument, nullptr, 'p'},
 			{"memIdx", required_argument, nullptr, 'm'},
+			{"terminateOnUserExit", no_argument, &opts->terminateOnUserExit, 1}, // overwrite pointer with 1 if option is given
 			{nullptr, no_argument, nullptr, 0}
 	};
 	firmwareLoadingMode_t loadingMode = None;
@@ -86,16 +89,19 @@ void HandleArguments(int argc, char **argv, struct cmdline_options *opts) {
 	opts->traceFile = nullptr;
 	opts->uartFile = nullptr;
 	opts->pcFile = nullptr;
+	opts->terminateOnUserExit = 0;
 
 
 	while(true) {
-		int opt = getopt_long(argc, argv, "l:s:f:t:u:r:i:p:m", long_opt, nullptr);
+		int opt = getopt_long(argc, argv, "l:t:u:m:", long_opt, nullptr); // string is [short-option-char][:], where : indicates that the short option requires an argument. Chars should match above chars to use the same code
 
 		if (opt == -1) {
 			break;
 		}
 
 		switch(opt) {
+			case 0: // flag option, nothing to do here
+				break;
 			case 'l':
 				opts->logFile = optarg;
 				break;
@@ -110,7 +116,7 @@ void HandleArguments(int argc, char **argv, struct cmdline_options *opts) {
 					opts->scratchInitFile = optarg;
 					loadingMode = Combined;
 				} else {
-					ExitWithArgumentError("use either hwInit for the firmware or ramInit and scratchInit!");
+					exitWithArgumentError("use either hwInit for the firmware or ramInit and scratchInit!");
 				}
 				break;
 
@@ -127,7 +133,7 @@ void HandleArguments(int argc, char **argv, struct cmdline_options *opts) {
 					opts->ramInitFile = optarg;
 					loadingMode = Seperate;
 				} else {
-					ExitWithArgumentError("use either hwInit for the firmware or ramInit and scratchInit!");
+					exitWithArgumentError("use either hwInit for the firmware or ramInit and scratchInit!");
 				}
 				break;
 
@@ -136,7 +142,7 @@ void HandleArguments(int argc, char **argv, struct cmdline_options *opts) {
 					opts->scratchInitFile = optarg;
 					loadingMode = Seperate;
 				} else {
-					ExitWithArgumentError("use either hwInit for the firmware or ramInit and scratchInit!");
+					exitWithArgumentError("use either hwInit for the firmware or ramInit and scratchInit!");
 				}
 				break;
 			case 'p':
@@ -147,18 +153,18 @@ void HandleArguments(int argc, char **argv, struct cmdline_options *opts) {
 					opts->memIdxFile = optarg;
 					loadingMode = MemIdx;
 				} else {
-					ExitWithArgumentError("use either the old --[xx]init options or memIdx");
+					exitWithArgumentError("use either the old --[xx]init options or memIdx");
 				}
 				break;
 			default:
 				cout << "unknown argument: " << opt << " ... stop!\n";
-				PrintHelp();
+				printHelp();
 				exit(EXIT_FAILURE);
 		}
 	}
 	// make sure that both init files are set!
 	if (loadingMode == None) {
-		ExitWithArgumentError("use either memIdx, hwInit or ramInit & scratchInit to initialize memories!");
+		exitWithArgumentError("use either memIdx, hwInit or ramInit & scratchInit to initialize memories!");
 	}
 
 	// set mode to struct
@@ -176,7 +182,7 @@ int main(int argc, char **argv) {
 
 	// Initialize Verilators variables
 	Verilated::commandArgs(argc, argv);
-	HandleArguments(argc, argv, &opts);
+	handleArguments(argc, argv, &opts);
 
 
 	scratchFile.open(opts.scratchInitFile);
@@ -255,6 +261,12 @@ int main(int argc, char **argv) {
 	if (opts.traceFile) {
 		cva5Tracer->start_tracer(opts.traceFile);
 	}
+
+	if (opts.terminateOnUserExit) {
+		cva5Tracer->set_terminate_on_user_exit(true);
+		cout << "Will terminate simulation on first User App Exit!" << endl;
+	}
+
 	cva5Tracer->reset();
 	cout << "--------------------------------------------------------------\n";
 	cout << "   Starting Simulation";
@@ -267,7 +279,7 @@ int main(int argc, char **argv) {
 
 	// Tick the clock until we are done
     bool sig_phase_complete = false;
-	while(!(cva5Tracer->has_stalled() || cva5Tracer->has_terminated())) {
+	do {
 	    cva5Tracer->tick();
         //Compliance Tests Signature Printing Phase
         sig_phase_complete |= cva5Tracer->check_if_instruction_retired(COMPLIANCE_SIG_PHASE_NOP);
@@ -277,11 +289,28 @@ int main(int argc, char **argv) {
             std::cout << "--------------------------------------------------------------\n";
             cva5Tracer->set_log_file(&sigFile);
         }
-	}
+	} while (!(cva5Tracer->has_stalled() || cva5Tracer->has_terminated()));
 
 	cout << "\n--------------------------------------------------------------\n";
 	cout << "   Simulation Completed  " << cva5Tracer->get_cycle_count() << " cycles.\n";
     cva5Tracer->print_stats();
+
+	int exitCode = cva5Tracer->get_user_app_response();
+
+	switch (exitCode) {
+		case 0: break;
+		case -10: 
+			cout << "User App started but never finished!" << endl;
+			break;
+		case 0xF: 
+			cout << "User App finished with error!" << endl;
+			break;
+		case -100:
+			cout << "No User App ran!" << endl;
+			break;
+		default:
+			cout << "User App Exit Code: " << exitCode << endl;
+	}
 
 	if (opts.logFile) {
 		logFile.close();
@@ -294,5 +323,5 @@ int main(int argc, char **argv) {
 
 	delete cva5Tracer;
 
-	exit(EXIT_SUCCESS);
+	exit(exitCode);
 }
