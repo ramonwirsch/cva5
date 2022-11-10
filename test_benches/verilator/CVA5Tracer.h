@@ -124,6 +124,7 @@ public:
   void start_tracer(const char *trace_file);
 
   void set_terminate_on_user_exit(bool terminate);
+  void set_stall_limit(int stallLimit);
 
   uint64_t get_cycle_count();
   uint64_t get_ticks();

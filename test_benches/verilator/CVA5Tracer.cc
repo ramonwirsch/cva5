@@ -237,13 +237,21 @@ void CVA5Tracer::tick() {
 
 }
 
+void CVA5Tracer::set_stall_limit(int stallLimit) {
+    if (stallLimit < 0) {
+        std::cerr << "Invalid stallLimit " << stallLimit << ", sticking with previous " << stall_limit << std::endl;
+        return;
+    }
+    this->stall_limit = stallLimit;
+}
+
 void CVA5Tracer::checkForStalls() {
     if (!tb->instruction_issued) {
-        if (stall_count > stall_limit) {
+        if (stall_count > stall_limit && stall_limit != 0) {
             stalling = true;
             stall_count = 0;
             std::cout << "\n\nError!!!!\n";
-            std::cout << "Stall of " << stall_limit << " cycles detected!\n\n";
+            std::cout << "Stall of " << stall_limit << " cycles detected at " << cycle_count << std::endl << std::endl;
 		} else {
 			stall_count++;
 		}
@@ -274,20 +282,25 @@ void CVA5Tracer::checkForTerminationAndMagicNops() {
 
                 if (magicNumber == MAGIC_TRACE_ENABLE) {
                     if (verilatorWaveformTracer) {
+                        std::cerr << "Starting VCD trace at " << cycle_count << std::endl;
                         trace_active = true;
                     }
                 } else if (magicNumber == MAGIC_TRACE_DISABLE) {
                     if (verilatorWaveformTracer) {
+                        std::cerr << "Stopping VCD trace at " << cycle_count << std::endl;
                         trace_active = false;
                     }
                 } else if (magicNumber == MAGIC_TICKS_RESET) {
                     ticks = 0;
                 } else if (magicNumber == MAGIC_STAT_COLLECTION_START) {
+                    std::cerr << "Starting stat collection at " << cycle_count << std::endl;
                     reset_stats();
                     collect_stats = true;
                 } else if (magicNumber == MAGIC_STAT_COLLECTION_RESUME) {
+                    std::cerr << "Resuming stat collection at " << cycle_count << std::endl;
                     collect_stats = true;
                 } else if (magicNumber == MAGIC_STAT_COLLECTION_END) {
+                    std::cerr << "Stopping stat collection at " << cycle_count << std::endl;
                     collect_stats = false;
                 } else if (magicNumber == MAGIC_USER_APP_START) {
                     userAppResponse = -10;

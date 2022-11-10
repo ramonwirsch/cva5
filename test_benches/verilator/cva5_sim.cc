@@ -39,6 +39,7 @@ struct cmdline_options {
 	char *pcFile;
 	firmwareLoadingMode_t hwInitMode;
 	int terminateOnUserExit;
+	int stallLimit;
 };
 
 void printHelp () {
@@ -55,6 +56,7 @@ void printHelp () {
 		"\n"
 		"--uart         set a UART device for the serial console to connect to\n"
 		"--terminateOnUserExit      stops similuation as soon as one of the USER_APP_EXIT MAGIC NOPS is executed. Otherwise simulation will run until crash or infinite loop\n"
+		"--stallLimit	set the amount of ticks without CVA5 issuing any instruction that is considered a stall. 0 disables this completely\n"
 		"--help         print this help and exit\n";
 }
 
@@ -76,6 +78,7 @@ void handleArguments(int argc, char **argv, struct cmdline_options *opts) {
 			{"pcFile", required_argument, nullptr, 'p'},
 			{"memIdx", required_argument, nullptr, 'm'},
 			{"terminateOnUserExit", no_argument, &opts->terminateOnUserExit, 1}, // overwrite pointer with 1 if option is given
+			{"stallLimit", required_argument, nullptr, 'S'},
 			{nullptr, no_argument, nullptr, 0}
 	};
 	firmwareLoadingMode_t loadingMode = None;
@@ -90,6 +93,7 @@ void handleArguments(int argc, char **argv, struct cmdline_options *opts) {
 	opts->uartFile = nullptr;
 	opts->pcFile = nullptr;
 	opts->terminateOnUserExit = 0;
+	opts->stallLimit = -1;
 
 
 	while(true) {
@@ -154,6 +158,17 @@ void handleArguments(int argc, char **argv, struct cmdline_options *opts) {
 					loadingMode = MemIdx;
 				} else {
 					exitWithArgumentError("use either the old --[xx]init options or memIdx");
+				}
+				break;
+			case 'S':
+				{
+					stringstream ss(optarg);
+					ss >> opts->stallLimit;
+					if (ss.fail()) {
+						cout << "Invalid value for stallLimit: " << optarg << "!" << endl;
+						printHelp();
+						exit(EXIT_FAILURE);
+					}
 				}
 				break;
 			default:
@@ -265,6 +280,10 @@ int main(int argc, char **argv) {
 	if (opts.terminateOnUserExit) {
 		cva5Tracer->set_terminate_on_user_exit(true);
 		cout << "Will terminate simulation on first User App Exit!" << endl;
+	}
+
+	if (opts.stallLimit >= 0) { // leave default value for negative values or when not set
+		cva5Tracer->set_stall_limit(opts.stallLimit);
 	}
 
 	cva5Tracer->reset();
