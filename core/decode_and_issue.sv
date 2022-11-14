@@ -653,15 +653,13 @@ module decode_and_issue
         assign tr_div_operand_stall = tr_operand_stall & unit_needed_issue_stage[UNIT_IDS.DIV];
 
         //Instruction Mix
-        always_ff @(posedge clk) begin
-            tr_alu_op <= issue_to[UNIT_IDS.ALU];
-            tr_branch_or_jump_op <= issue_to[UNIT_IDS.BR];
-            tr_load_op <= issue_to[UNIT_IDS.LS] & is_load_r;
-            tr_store_op <= issue_to[UNIT_IDS.LS] & is_store_r;
-            tr_mul_op <= issue_to[UNIT_IDS.MUL];
-            tr_div_op <= issue_to[UNIT_IDS.DIV];
-            tr_misc_op <= issue_to[UNIT_IDS.CSR] | issue_to[UNIT_IDS.IEC];
-        end
+        assign tr_alu_op = issue_stage_ready && instruction_issued && (issue.instruction[6:2] inside {ARITH_T, ARITH_IMM_T, AUIPC_T, LUI_T} && ~tr_mul_op && ~tr_div_op);
+		assign tr_branch_or_jump_op = issue_stage_ready && instruction_issued && (issue.instruction[6:2] inside {JAL_T, JALR_T, BRANCH_T});
+		assign tr_load_op = issue_stage_ready && instruction_issued && (issue.instruction[6:2] inside {LOAD_T, AMO_T});
+		assign tr_store_op = issue_stage_ready && instruction_issued && (issue.instruction[6:2] inside {STORE_T});
+		assign tr_mul_op = issue_stage_ready && instruction_issued && unit_needed_issue_stage[UNIT_IDS.MUL];
+		assign tr_div_op = issue_stage_ready && instruction_issued && unit_needed_issue_stage[UNIT_IDS.DIV];
+		assign tr_misc_op = issue_stage_ready && instruction_issued & ~(tr_alu_op | tr_branch_or_jump_op | tr_load_op | tr_store_op | tr_mul_op | tr_div_op);
 
         assign tr_instruction_issued_dec = instruction_issued;
         assign tr_instruction_pc_dec = issue.pc;

@@ -233,7 +233,14 @@ module cva5
     logic tr_return_correct;
     logic tr_return_misspredict;
 
+    logic tr_br_taken;
+    logic tr_br_is_branch;
+    logic tr_br_is_return;
+    logic tr_br_is_call;
+    logic [31:0] tr_branch_target_pc;
+
     logic tr_load_conflict_delay;
+    logic tr_ls_is_peri_access;
 
     logic tr_rs1_forwarding_needed;
     logic tr_rs2_forwarding_needed;
@@ -477,7 +484,12 @@ module cva5
         .tr_branch_correct (tr_branch_correct),
         .tr_branch_misspredict (tr_branch_misspredict),
         .tr_return_correct (tr_return_correct),
-        .tr_return_misspredict (tr_return_misspredict)
+        .tr_return_misspredict (tr_return_misspredict),
+        .tr_br_is_branch(tr_br_is_branch),
+        .tr_br_taken(tr_br_taken),
+        .tr_br_is_call(tr_br_is_call),
+        .tr_br_is_return(tr_br_is_return),
+        .tr_branch_target_pc(tr_branch_target_pc)
     );
 
 
@@ -555,6 +567,7 @@ module cva5
         .load_store_status(load_store_status),
         .wb (unit_wb[UNIT_IDS.LS]),
         .tr_load_conflict_delay (tr_load_conflict_delay),
+        .tr_ls_is_peri_access(tr_ls_is_peri_access),
         .instr_inv(instr_inv),
         .instr_inv_en(instr_inv_enabled),
         .instr_inv_stall(instr_inv_stall)
@@ -732,7 +745,13 @@ module cva5
             tr.events.rs2_forwarding_needed <= tr_rs2_forwarding_needed;
             tr.events.rs1_and_rs2_forwarding_needed <= tr_rs1_and_rs2_forwarding_needed;
             tr.events.instr_inv_stall <= instr_inv_stall;
+            tr.events.br_branch_taken <= tr_br_taken;
+            tr.events.br_is_branch <= tr_br_is_branch;
+            tr.events.br_is_return <= tr_br_is_return;
+            tr.events.br_is_call <= tr_br_is_call;
+            tr.events.ls_is_peri_access <= tr_ls_is_peri_access;
             tr.current_privilege <= current_privilege;
+            tr.branch_target_pc <= tr_branch_target_pc;
             tr.instruction_pc_dec <= tr_instruction_pc_dec;
             tr.instruction_data_dec <= tr_instruction_data_dec;
         end

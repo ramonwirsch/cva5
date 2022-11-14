@@ -3,8 +3,8 @@ VERILATOR_DIR=$(CVA5_DIR)/test_benches/verilator
 
 # Sources for verilator
 CVA5_HW_SRCS = $(addprefix $(CVA5_DIR)/, $(shell cat $(CVA5_DIR)/tools/compile_order))
-CVA5_SIM_SRCS = $(addprefix $(VERILATOR_DIR)/, CVA5Tracer.cc SimMem.cc cva5_sim.cc AXI_DDR_simulation/axi_ddr_sim.cc AXI_DDR_simulation/ddr_page.cc BaseMemoryFragmentLoader.cpp MemoryFragmentLoader.cpp)
-CVA5_INCLUDED_SIM_SRCS = $(addprefix $(VERILATOR_DIR)/, cva5_sim.cc AXI_DDR_simulation/ddr_page.cc SimMem.cc)
+CVA5_SIM_SRCS = $(addprefix $(VERILATOR_DIR)/, CVA5Tracer.cc SimMem.cc cva5_sim.cc cmdArgs.cpp buildCva5Tracer.cpp AXI_DDR_simulation/axi_ddr_sim.cc AXI_DDR_simulation/ddr_page.cc BaseMemoryFragmentLoader.cpp MemoryFragmentLoader.cpp)
+CVA5_SIM_INC_SRC = $(addprefix $(CVA5_VERILATOR_DIR)/, CVA5Tracer.h SimMem.h MemoryFragmentLoader.h BaseMemoryFragmentLoader.h cmdArgs.h buildCva5Tracer.h AXI_DDR_simulation/axi_ddr_sim.h AXI_DDR_simulation/axi_interface.h AXI_DDR_simulation/ddr_page.h)
 
 
 #Tracing: Set to True or False
@@ -42,7 +42,7 @@ delay_seed = DELAY_SEED=$(DELAY_SEED)
 ddr_start_addr = DDR_START_ADDR=$(DDR_START_ADDR)
 
 CFLAGS = -g0 -O3 -std=c++14 -march=native -D$(ddr_size_def) -D$(page_size_def) -D$(max_inflight_read_requests) -D$(max_inflight_write_requests)\
-	-D$(mix_delay_read) -D$(max_delay_read) -D$(min_delay_write) -D$(max_delay_write) -D$(delay_seed) -D$(ddr_start_addr) -DLMEM_START_ADDR=$(LMEM_START_ADDR) -I$(VERILATOR_DIR)/AXI_DDR_simulation
+	-D$(mix_delay_read) -D$(max_delay_read) -D$(min_delay_write) -D$(max_delay_write) -D$(delay_seed) -D$(ddr_start_addr) -DLMEM_START_ADDR=$(LMEM_START_ADDR)
 
 #Verilator
 ################################################################################

@@ -2,7 +2,7 @@
 
 #include "BaseMemoryFragmentLoader.h"
 #include "SimMem.h"
-#include "axi_ddr_sim.h"
+#include "AXI_DDR_simulation/axi_ddr_sim.h"
 
 enum TargetMemory {
     TargetMemLocal, TargetMemDDR, TargetMemInvalid

@@ -66,7 +66,7 @@
 template <typename T, int N>
 constexpr int arraySize(T(&)[N]) { return N; }
 
-static const char * const eventNames[] = {
+static const char * const defaultEventNames[] = {
     "early_branch_correction",
     "operand_stall",
     "unit_stall",
@@ -90,20 +90,28 @@ static const char * const eventNames[] = {
     "return_correct",
     "return_misspredict",
     "load_conflict_delay",
+    "ls_is_peri_access",
     "rs1_forwarding_needed",
     "rs2_forwarding_needed",
     "rs1_and_rs2_forwarding_needed",
-    "instr_inv_stall"
+    "instr_inv_stall",
+    "br_branch_taken",
+		"br_is_branch",
+		"br_is_return",
+		"br_is_call"
 };
-static const int numEvents = arraySize(eventNames);
 
 //Testbench with CVA5 trace outputs on toplevel
 class CVA5Tracer {
 public:
-  CVA5Tracer();
-  CVA5Tracer(std::ifstream& programFile);
-  CVA5Tracer(std::ifstream& scratchFile, std::ifstream& ramFile);
+  CVA5Tracer(const char* const* eventNames = defaultEventNames, int numEvents = arraySize(defaultEventNames));
+  
+  [[deprecated]] CVA5Tracer(std::ifstream& programFile); // use loadMemoriesFromFile
+  [[deprecated]] CVA5Tracer(std::ifstream& scratchFile, std::ifstream& ramFile); // use loadMemoriesFromFiles
   ~CVA5Tracer();
+
+  void loadMemoriesFromFile(std::ifstream& programFile); // MemFragmentLoader is better...
+  void loadMemoriesFromFiles(std::ifstream& scratchFile, std::ifstream& ramFile); // MemFragmentLoader is better...
 
   bool check_if_instruction_retired(uint32_t instruction);
   /**
@@ -160,7 +168,9 @@ private:
    * counts actual clock-cycles for the application. Can be reset be Hint-NOP
    */
   uint64_t ticks = 0;
-  uint64_t event_counters[numEvents];
+  const char * const* const eventNames;
+  const int numEvents;
+  uint64_t* event_counters;
 
   bool terminated = false;
   bool terminating = false;

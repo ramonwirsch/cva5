@@ -41,11 +41,17 @@ module branch_unit
 
         exception_interface.unit exception,
 
-        //Trace signals
+        // Trace signals
         output logic tr_branch_correct,
         output logic tr_branch_misspredict,
         output logic tr_return_correct,
-        output logic tr_return_misspredict
+        output logic tr_return_misspredict,
+
+        output logic tr_br_taken,
+        output logic tr_br_is_branch,
+        output logic tr_br_is_return,
+        output logic tr_br_is_call,
+        output logic [31:0] tr_branch_target_pc
     );
 
     logic branch_issued_r;
@@ -168,6 +174,13 @@ module branch_unit
         assign tr_branch_misspredict = instruction_is_completing & ~is_return & branch_flush;
         assign tr_return_correct = instruction_is_completing & is_return & ~branch_flush;
         assign tr_return_misspredict = instruction_is_completing & is_return & branch_flush;
+
+        assign tr_br_taken = branch_taken;
+		assign tr_br_is_branch = ~(branch_inputs.jal | branch_inputs.jalr);
+		assign tr_br_is_return = branch_inputs.is_return;
+		assign tr_br_is_call = branch_inputs.is_call;
+		assign tr_branch_target_pc[31:1] = new_pc[31:1];
+		assign tr_branch_target_pc[0] = new_pc[0] & ~branch_inputs.jalr;
     end
     endgenerate
 

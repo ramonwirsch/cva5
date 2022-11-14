@@ -65,7 +65,11 @@ module load_store_unit
         output load_store_status_t load_store_status,
         unit_writeback_interface.unit wb,
 
+		// Trace
         output logic tr_load_conflict_delay,
+        output logic tr_ls_is_peri_access,
+
+        // Instruction Invalidation
         instruction_invalidation_interface.source instr_inv,
         input logic instr_inv_en,
         output logic instr_inv_stall
@@ -456,6 +460,7 @@ module load_store_unit
     //Trace Interface
     generate if (ENABLE_TRACE_INTERFACE) begin : gen_ls_trace
         assign tr_load_conflict_delay = tr_possible_load_conflict_delay & units_ready;
+        assign tr_ls_is_peri_access = CONFIG.INCLUDE_PERIPHERAL_BUS && sub_unit_address_match[BUS_ID];
     end
     endgenerate
 

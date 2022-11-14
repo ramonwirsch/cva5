@@ -349,7 +349,7 @@ uint64_t CVA5Tracer::get_ticks() {
     return ticks;
 }
 
-CVA5Tracer::CVA5Tracer() {
+CVA5Tracer::CVA5Tracer(const char* const* const eventNames, const int numEvents) : eventNames(eventNames), numEvents(numEvents) {
     tb = new Vcva5_sim;
 
     axi_ddr = new axi_ddr_sim(tb);
@@ -358,35 +358,33 @@ CVA5Tracer::CVA5Tracer() {
 
     instruction_r = 0; // illegal op, should actually not be relevant
     data_out_r = 0;
+
+    event_counters = new uint64_t[numEvents];
 }
 
-CVA5Tracer::CVA5Tracer(std::ifstream& programFile) {
-
-    tb = new Vcva5_sim;
-
+void CVA5Tracer::loadMemoriesFromFile(ifstream& programFile) {
     axi_ddr = new axi_ddr_sim(programFile, DDR_START_ADDR, tb);
         
     programFile.clear();
     programFile.seekg(0, ios::beg);
     mem = new SimMem(programFile, 128);
-
-    instruction_r = mem->read(tb->instruction_bram_addr);
-    data_out_r = 0;
 }
 
-
-CVA5Tracer::CVA5Tracer(std::ifstream& scratchFile, std::ifstream& ramFile) {
-
-	tb = new Vcva5_sim;
-
-	axi_ddr = new axi_ddr_sim(ramFile, DDR_START_ADDR, tb);
+void CVA5Tracer::loadMemoriesFromFiles(ifstream& scratchFile, ifstream& ramFile) {
+    axi_ddr = new axi_ddr_sim(ramFile, DDR_START_ADDR, tb);
 
 	scratchFile.clear();
 	scratchFile.seekg(0, ios::beg);
 	mem = new SimMem(scratchFile, 128);
+}
 
-	instruction_r = mem->read(tb->instruction_bram_addr);
-	data_out_r = 0;
+CVA5Tracer::CVA5Tracer(std::ifstream& programFile) : CVA5Tracer() {
+    loadMemoriesFromFile(programFile);
+}
+
+
+CVA5Tracer::CVA5Tracer(std::ifstream& scratchFile, std::ifstream& ramFile) : CVA5Tracer() {
+	loadMemoriesFromFiles(scratchFile, ramFile);
 }
 
 CVA5Tracer::~CVA5Tracer() {
@@ -399,6 +397,7 @@ CVA5Tracer::~CVA5Tracer() {
     }
 	#endif
     
+    delete[] event_counters;
 	delete mem;
 	delete tb;
 }

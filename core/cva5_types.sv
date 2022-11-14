@@ -278,7 +278,7 @@ package cva5_types;
         logic ls_operand_stall;
         logic div_operand_stall;
 
-        //Instruction mix
+        // Instruction mix
         logic alu_op;
         logic branch_or_jump_op;
         logic load_op;
@@ -287,7 +287,7 @@ package cva5_types;
         logic div_op;
         logic misc_op;
 
-        //Branch Unit
+        // Branch Prediction
         logic branch_correct;
         logic branch_misspredict;
         logic return_correct;
@@ -295,15 +295,21 @@ package cva5_types;
 
         //Load Store Unit
         logic load_conflict_delay;
+        logic ls_is_peri_access;
 
         //Register File
         logic rs1_forwarding_needed;
         logic rs2_forwarding_needed;
         logic rs1_and_rs2_forwarding_needed;
 
-        //Instr. Invalidation
+        // Instr. Invalidation
         logic instr_inv_stall;
 
+        // Branch Results/Effects
+		logic br_branch_taken;
+		logic br_is_branch;
+		logic br_is_return;
+		logic br_is_call;
     } cva5_trace_events_t;
 
     typedef struct packed {
@@ -316,6 +322,7 @@ package cva5_types;
         logic [31:0] instruction_pc_dec;
         logic [31:0] instruction_data_dec;
         logic [1:0] current_privilege;
+        logic [31:0] branch_target_pc;
         cva5_trace_events_t events;
     } trace_outputs_t;
 
