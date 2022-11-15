@@ -27,25 +27,39 @@ int openPort(char *port) {
 
 int main(int argc, char **argv) {
 	ofstream logFile, sigFile, pcFile;
-	ifstream scratchFile, ramFile;
 	int uartFile = 0;
 	struct cmdline_options opts;
 
 	// Initialize Verilators variables
 	Verilated::commandArgs(argc, argv);
 	handleArguments(argc, argv, &opts);
-
-
-	scratchFile.open(opts.scratchInitFile);
-	ramFile.open(opts.ramInitFile);
 	
 	if (opts.hwInitMode == Combined) {
+		
+	} else if (opts.hwInitMode == Seperate) {
+		
+	}
+
+	cva5Tracer = buildCva5Tracer(&opts);
+
+	if (opts.hwInitMode == Combined) {
+		ifstream hwFile;
+		hwFile.open(opts.scratchInitFile);
+
 		cout << "Same firmware file is used for both memories: " << opts.scratchInitFile << endl;
-		if (!scratchFile.is_open()) {
+		if (!hwFile.is_open()) {
 			cout << "Failed to open hwinit File: " << opts.scratchInitFile << endl;
 			exit(EXIT_FAILURE);
 		}
+
+    	cva5Tracer->loadMemoriesFromFile(hwFile);
+
+		hwFile.close();
 	} else if (opts.hwInitMode == Seperate) {
+		ifstream scratchFile, ramFile;
+		scratchFile.open(opts.scratchInitFile);
+		ramFile.open(opts.ramInitFile);
+
 		cout << "Seperate firmware files are used for the memories! Scratch:" << opts.scratchInitFile << " and RAM:" << opts.ramInitFile << endl;
 		if (!scratchFile.is_open()) {
 			cout << "Failed to open Scratch File: " << opts.scratchInitFile << endl;
@@ -55,14 +69,11 @@ int main(int argc, char **argv) {
 			cout << "Failed to open RAM File: " << opts.ramInitFile << endl;
 			exit(EXIT_FAILURE);
 		}
-	}
 
-	cva5Tracer = buildCva5Tracer(&opts);
-
-	if (opts.hwInitMode == Combined) {
-    	cva5Tracer->loadMemoriesFromFile(scratchFile);
-	} else if (opts.hwInitMode == Seperate) {
 		cva5Tracer->loadMemoriesFromFiles(scratchFile, ramFile);
+
+		scratchFile.close();
+		ramFile.close();
 	} else if (opts.hwInitMode == MemIdx) {
 		cout << "Loading MemoryIdx: " << opts.memIdxFile << endl;
 		MemoryFragmentLoader* loader = new MemoryFragmentLoader(cva5Tracer->mem, LMEM_START_ADDR, cva5Tracer->axi_ddr, DDR_START_ADDR, DDR_START_ADDR + DDR_SIZE);
@@ -173,7 +184,6 @@ int main(int argc, char **argv) {
 	if (opts.signatureFile) {
 		sigFile.close();
 	}
-    scratchFile.close();
     pcFile.close();
 
 	delete cva5Tracer;

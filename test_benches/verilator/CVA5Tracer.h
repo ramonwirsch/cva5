@@ -148,10 +148,10 @@ public:
   SimMem *mem;
 private:
 #if VM_TRACE == 1
-		VerilatedVcdC	*verilatorWaveformTracer;
+		VerilatedVcdC	*verilatorWaveformTracer = nullptr;
 #endif
-  std::ofstream* logFile;
-  std::ofstream* pcFile;
+  std::ofstream* logFile = nullptr;
+  std::ofstream* pcFile = nullptr;
   bool logPC = false;
 
   int uartFile;
