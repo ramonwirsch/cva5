@@ -4,7 +4,7 @@ VERILATOR_DIR=$(CVA5_DIR)/test_benches/verilator
 # Sources for verilator
 CVA5_HW_SRCS = $(addprefix $(CVA5_DIR)/, $(shell cat $(CVA5_DIR)/tools/compile_order))
 CVA5_SIM_SRCS = $(addprefix $(VERILATOR_DIR)/, CVA5Tracer.cc SimMem.cc cva5_sim.cc cmdArgs.cpp buildCva5Tracer.cpp AXI_DDR_simulation/axi_ddr_sim.cc AXI_DDR_simulation/ddr_page.cc BaseMemoryFragmentLoader.cpp MemoryFragmentLoader.cpp)
-CVA5_SIM_INC_SRC = $(addprefix $(CVA5_VERILATOR_DIR)/, CVA5Tracer.h SimMem.h MemoryFragmentLoader.h BaseMemoryFragmentLoader.h cmdArgs.h buildCva5Tracer.h AXI_DDR_simulation/axi_ddr_sim.h AXI_DDR_simulation/axi_interface.h AXI_DDR_simulation/ddr_page.h)
+CVA5_SIM_INC_SRC = $(addprefix $(CVA5_VERILATOR_DIR)/, CVA5Tracer.h SimMem.h MemoryFragmentLoader.h BaseMemoryFragmentLoader.h cmdArgs.h buildCva5Tracer.h trace_helper.h AXI_DDR_simulation/axi_ddr_sim.h AXI_DDR_simulation/axi_interface.h AXI_DDR_simulation/ddr_page.h)
 
 
 #Tracing: Set to True or False

@@ -4,6 +4,7 @@
 #include <iostream>
 #include <sstream>
 #include <getopt.h>
+#include "trace_helper.h"
 
 using namespace std;
 
@@ -15,7 +16,9 @@ void printHelp () {
 		"--log          set a logfile\n"
 		"--sig          set a signature logfile for Signature Printing phase\n"
         "--pcFile       output PC / excecuted instructions to a log file\n"
-		"--trace        set a file for trace output\n"
+		"--trace        set a file for trace output ("
+		TRACE_FORMAT
+		"-format)\n"
 		"               * The firmware can be set in two ways: either together for Scratch- and RAM-Section together, or via seperate files\n"
 		"--hwInit       set firmware in Scratch- and RAM-Section\n"
 		"--ramInit      set firmware for RAM-Section only\n"

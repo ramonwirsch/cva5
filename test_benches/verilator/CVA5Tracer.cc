@@ -281,15 +281,23 @@ void CVA5Tracer::checkForTerminationAndMagicNops() {
                 uint32_t magicNumber = MAGIC_NOP_NUMBER(insn);
 
                 if (magicNumber == MAGIC_TRACE_ENABLE) {
+                    #if VM_TRACE == 1
                     if (verilatorWaveformTracer) {
-                        std::cerr << "Starting VCD trace at " << cycle_count << std::endl;
+                        std::cerr << "Starting "<< TRACE_FORMAT << " trace at " << cycle_count << std::endl;
                         trace_active = true;
                     }
+                    #else
+                    std::cerr << "Ignoring TRACE_ENABLE command, tracing was not configured" << std::endl;
+                    #endif
                 } else if (magicNumber == MAGIC_TRACE_DISABLE) {
+                    #if VM_TRACE == 1
                     if (verilatorWaveformTracer) {
-                        std::cerr << "Stopping VCD trace at " << cycle_count << std::endl;
+                        std::cerr << "Stopping " << TRACE_FORMAT << " trace at " << cycle_count << std::endl;
                         trace_active = false;
                     }
+                    #else
+                    std::cerr << "Ignoring TRACE_DISABLE command, tracing was not configured" << std::endl;
+                    #endif
                 } else if (magicNumber == MAGIC_TICKS_RESET) {
                     ticks = 0;
                 } else if (magicNumber == MAGIC_STAT_COLLECTION_START) {
@@ -330,7 +338,7 @@ int CVA5Tracer::get_user_app_response() {
 void CVA5Tracer::start_tracer(const char *trace_file) {
 	#if VM_TRACE == 1
     Verilated::traceEverOn(true);
-    verilatorWaveformTracer = new VerilatedVcdC;
+    verilatorWaveformTracer = new VERILATOR_TRACER_T;
     tb->trace(verilatorWaveformTracer, 99);
     verilatorWaveformTracer->open(trace_file);
     trace_active = true;

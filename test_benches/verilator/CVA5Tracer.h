@@ -27,7 +27,7 @@
 #include <iterator>
 #include <termios.h>
 #include "verilated.h"
-#include "verilated_vcd_c.h"
+#include "trace_helper.h"
 #include "Vcva5_sim.h"
 #include "SimMem.h"
 #include "AXI_DDR_simulation/axi_ddr_sim.h"
@@ -148,7 +148,7 @@ public:
   SimMem *mem;
 private:
 #if VM_TRACE == 1
-		VerilatedVcdC	*verilatorWaveformTracer = nullptr;
+		VERILATOR_TRACER_T	*verilatorWaveformTracer = nullptr;
 #endif
   std::ofstream* logFile = nullptr;
   std::ofstream* pcFile = nullptr;
