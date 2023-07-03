@@ -315,11 +315,11 @@ void CVA5Tracer::checkForTerminationAndMagicNops() {
                 } else if (magicNumber == MAGIC_USER_APP_EXIT_SUCCESS) {
                     userAppResponse = 0;
                     if (terminateOnUserExit) {
-                        std::cout << "\n\nUser App Exited\n\n";
+                        std::cerr << "\n\nUser App Exited\n\n";
                         terminating = true;
                     }
                 } else if (magicNumber == MAGIC_USER_APP_EXIT_ERROR) {
-                    std::cout << "\n\nUser App Error!!!!\n\n";
+                    std::cerr << "\n\nUser App Error!!!!\n\n";
                     userAppResponse = 0xF;
                     if (terminateOnUserExit) {
                         terminating = true;
