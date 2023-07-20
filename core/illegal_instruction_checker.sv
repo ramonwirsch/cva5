@@ -190,11 +190,11 @@ module  illegal_instruction_checker
     };
 
     assign machine_legal = instruction inside {
-        MRET, ECALL, EBREAK
+        MRET, ECALL, EBREAK, WFI
     };
 
     assign supervisor_legal = instruction inside {
-        SRET, SFENCE_VMA, WFI
+        SRET, SFENCE_VMA
     };
 
     assign illegal_instruction = ~(
