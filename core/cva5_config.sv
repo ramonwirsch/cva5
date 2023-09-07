@@ -109,6 +109,7 @@ package cva5_config;
         bit INCLUDE_IFENCE; //local mem operations only
         bit INCLUDE_CSRS;
         bit INCLUDE_AMO; //cache operations only
+        bit INCLUDE_FPU_SINGLE;
         //CSR constants
         csr_config_t CSRS;
         //Memory Options
@@ -138,7 +139,6 @@ package cva5_config;
         bit INCLUDE_BRANCH_PREDICTOR;
         branch_predictor_config_t BP;
         //Writeback Options
-        int unsigned NUM_WB_GROUPS;
         bit INSTRUCTION_COHERENCY;
         // how big is the queue in front of icache and branch-pred for invalidations. Only relevant when INSTRUCTION_COHERENCY is enabled
         // Must be power of 2 if used
@@ -155,6 +155,31 @@ package cva5_config;
         };
     endfunction
 
+    typedef struct packed {
+        int unsigned TOTAL_WB_GROUP_COUNT;
+        int unsigned GP_WB_GROUP_COUNT;
+        int unsigned FP_WB_GROUP_COUNT;
+        int unsigned TOTAL_READ_PORT_COUNT;
+        int unsigned GP_READ_PORT_COUNT;
+        int unsigned FP_READ_PORT_COUNT;
+    } rf_params_t;
+
+    localparam int unsigned GP_RF_FIXED_READ_PORT_COUNT = 2;
+    localparam int unsigned GP_RF_FIXED_WRITE_PORT_COUNT = 2;
+    localparam int unsigned FP_RF_FIXED_READ_PORT_COUNT = 3;
+    localparam int unsigned FP_RF_FIXED_WRITE_PORT_COUNT = 1;
+
+    function rf_params_t get_derived_rf_params (input cpu_config_t cpu);
+        return '{
+            TOTAL_WB_GROUP_COUNT : GP_RF_FIXED_WRITE_PORT_COUNT + (cpu.INCLUDE_FPU_SINGLE? FP_RF_FIXED_WRITE_PORT_COUNT : 0),
+            GP_WB_GROUP_COUNT : GP_RF_FIXED_WRITE_PORT_COUNT,
+            FP_WB_GROUP_COUNT : (cpu.INCLUDE_FPU_SINGLE? FP_RF_FIXED_WRITE_PORT_COUNT : 0),
+            TOTAL_READ_PORT_COUNT : GP_RF_FIXED_READ_PORT_COUNT + FP_RF_FIXED_READ_PORT_COUNT,
+            GP_READ_PORT_COUNT : GP_RF_FIXED_READ_PORT_COUNT,
+            FP_READ_PORT_COUNT : (cpu.INCLUDE_FPU_SINGLE? FP_RF_FIXED_READ_PORT_COUNT : 0)
+        };
+    endfunction
+
 
     localparam cpu_config_t EXAMPLE_CONFIG = '{
         //ISA options
@@ -166,6 +191,7 @@ package cva5_config;
         INCLUDE_IFENCE : 1,
         INCLUDE_CSRS : 1,
         INCLUDE_AMO : 0,
+        INCLUDE_FPU_SINGLE : 0,
         //CSR constants
         CSRS : '{
             MACHINE_IMPLEMENTATION_ID : 0,
@@ -253,7 +279,6 @@ package cva5_config;
             RAS_ENTRIES : 8
         },
         //Writeback Options
-        NUM_WB_GROUPS : 2,
         INSTRUCTION_COHERENCY : 0,
         INSTR_INV_QUEUE_DEPTH : 0
     };
@@ -268,6 +293,8 @@ package cva5_config;
         int unsigned DIV;
         int unsigned BR;
         int unsigned IEC;
+        int unsigned FPU;
+        int unsigned FP_TO_GP;
     } unit_id_param_t;
 
     localparam unit_id_param_t EXAMPLE_UNIT_IDS = '{
@@ -277,7 +304,9 @@ package cva5_config;
         MUL : 3,
         DIV : 4,
         BR : 5,
-        IEC : 6
+        IEC : 6,
+        FPU : 7,
+        FP_TO_GP : 8
     };
 
     ////////////////////////////////////////////////////
@@ -290,13 +319,17 @@ package cva5_config;
     //MAX_IDS restricted to a power of 2
     localparam MAX_IDS = 8; //8 sufficient for rv32im configs
 
+    localparam MAX_POSSIBLE_REG_BITS = 34;
+    localparam MAX_WB_GROUPS = 3;
+
     ////////////////////////////////////////////////////
     //Number of commit ports
     localparam RETIRE_PORTS = 2; //min 1. (Non-powers of two supported) > 1 is recommended to allow stores to commit sooner
     localparam REGFILE_READ_PORTS = 2; //min 2, for RS1 and RS2. (Non-powers of two supported)
-    typedef enum bit {
+    typedef enum bit [1:0] {
         RS1 = 0,
-        RS2 = 1
+        RS2 = 1,
+        RS3 = 2
     } rs1_index_t;
 
 

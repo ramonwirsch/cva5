@@ -436,7 +436,7 @@ module load_store_unit
 
     ////////////////////////////////////////////////////
     //Output bank
-    assign wb.rd = final_load_data;
+    assign wb.rd[31:0] = final_load_data; //TODO until we support FLW
     assign wb.done = load_complete | load_exception_complete;
     assign wb.id = load_exception_complete ? exception.id : wb_attr.id;
 

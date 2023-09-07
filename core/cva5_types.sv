@@ -25,6 +25,8 @@ package cva5_types;
     import riscv_types::*;
     import csr_types::*;
 
+    localparam FLEN_INTERNAL = 34;
+
     localparam LOG2_RETIRE_PORTS = $clog2(RETIRE_PORTS);
     localparam LOG2_MAX_IDS = $clog2(MAX_IDS);
 
@@ -33,6 +35,11 @@ package cva5_types;
 
     typedef logic [3:0] addr_hash_t;
     typedef logic [5:0] phys_addr_t;
+
+    typedef struct packed {
+        logic isFloat;
+        rs_addr_t rs;
+    } rf_addr_t;
 
     typedef enum logic [1:0] {
         ALU_CONSTANT = 2'b00,
@@ -129,7 +136,7 @@ package cva5_types;
         logic [XLEN-1:0] rs1_load;
         logic [XLEN-1:0] rs2;
         logic [4:0] op;
-    }amo_alu_inputs_t;
+    } amo_alu_inputs_t;
 
     typedef struct packed{
         logic is_lr;
@@ -173,6 +180,58 @@ package cva5_types;
         logic [XLEN-1:0] data;
     } csr_inputs_t;
 
+    typedef enum logic [2:0] { 
+        ORG_A_SIGN = 3'b000,
+        ORG_B_SIGN = 3'b001,
+        INV_A_SIGN = 3'b010,
+        INV_B_SIGN = 3'b011,
+        XOR_SIGNS = 3'b100
+    } sign_mod_t;
+
+    typedef struct packed { // -?((rs1(*rs2)?)|rs1) (+ -?(rs3|rs2))?
+        logic mul; // rs1 * rs2. Result if none of the add-options is set
+        logic add_mul_rs3; // result is (res of mul) + rs3
+        logic add_rs1_rs2; // result rs1 + rs2
+        sign_mod_t ovr_1st_add_in_sign; // changes sign bit of first add operand or result if none of the above result-modes is active
+        logic negate_2nd_add_in; // flips sign bit of second add operand
+    } fpmac_op_t;
+
+    typedef enum logic [2:0] {
+        FPMAC_OP = 3'b000,
+        FPDIV_OP = 3'b001,
+        FPSQRT_OP = 3'b010,
+        FP_FROM_IEEE_OP = 3'b011,
+        FPCVT_FROM_I_OP = 3'b100,
+        FPCVT_FROM_U_OP = 3'b101,
+        FPMIN_OP = 3'b110,
+        FPMAX_OP = 3'b111
+    } fpu_op_t;
+
+    typedef struct packed{
+        logic [FLEN_INTERNAL-1:0] rs1;
+        logic [XLEN-1:0] rs1_gp;
+        logic [FLEN_INTERNAL-1:0] rs2;
+        logic [FLEN_INTERNAL-1:0] rs3;
+        fpmac_op_t fpmac_op;
+        fpu_op_t op;
+    } fpu_inputs_t;
+
+    typedef enum logic [2:0] {
+        FP_TO_IEEE_OP = 3'b000,
+        FPCVT_TO_I_OP = 3'b010,
+        FPCVT_TO_U_OP = 3'b011,
+        FPEQ_OP = 3'b100,
+        FPLT_OP = 3'b101,
+        FPLE_OP = 3'b110,
+        FPCLASS_OP = 3'b111
+    } fp_to_gp_op_t;
+
+    typedef struct packed{
+        logic [FLEN_INTERNAL-1:0] rs1;
+        logic [FLEN_INTERNAL-1:0] rs2;
+        fp_to_gp_op_t op;
+    } fp_to_gp_inputs_t;
+
     typedef struct packed{
         logic [31:0] pc_p4;
         logic is_ifence;
@@ -209,14 +268,14 @@ package cva5_types;
     typedef struct packed{
         id_t id;
         logic valid;
-        logic [31:0] data;
+        logic [MAX_POSSIBLE_REG_BITS-1:0] data;
     } wb_packet_t;
 
     typedef struct packed{
         id_t id;
         logic valid;
         phys_addr_t phys_addr;
-        logic [31:0] data;
+        logic [MAX_POSSIBLE_REG_BITS-1:0] data;
     } commit_packet_t;
 
     typedef struct packed{
@@ -286,6 +345,7 @@ package cva5_types;
         logic mul_op;
         logic div_op;
         logic misc_op;
+        logic float_op;
 
         // Branch Prediction
         logic branch_correct;

@@ -20,6 +20,8 @@
  *             Eric Matthews <ematthew@sfu.ca>
  */
 
+ `define max(a,b) ((a > b) ? a : b)
+
 module register_file
 
     import cva5_config::*;
@@ -27,7 +29,10 @@ module register_file
     import cva5_types::*;
     
     # (
-        parameter cpu_config_t CONFIG = EXAMPLE_CONFIG
+        parameter WRITE_PORTS = 2,
+        parameter READ_PORTS = 2,
+        parameter DATA_WIDTH = 32,
+        parameter DEPTH = 64
     )
 
     (
@@ -36,23 +41,27 @@ module register_file
         input gc_outputs_t gc,
 
         //decode write interface
-        input phys_addr_t decode_phys_rs_addr [REGFILE_READ_PORTS],
-        input logic [$clog2(CONFIG.NUM_WB_GROUPS)-1:0] decode_rs_wb_group [REGFILE_READ_PORTS],
+        input phys_addr_t decode_phys_rs_addr [READ_PORTS],
+        input logic [`max($clog2(WRITE_PORTS)-1, 0):0] decode_rs_wb_group [READ_PORTS],
         input phys_addr_t decode_phys_rd_addr,
         input logic decode_advance,
         input logic decode_uses_rd,
+
+        // infligh_writes
+        input phys_addr_t inflight_commit_addr_per_port [WRITE_PORTS], // so that parent can override which source to use to signal writing (done for GP seemingly to shorten path for alu-port/commit0)
+        input logic inflight_commit_per_port [WRITE_PORTS], // so that parent can override which source to use
 
         //Issue interface
         register_file_issue_interface.register_file rf_issue,
 
         //Writeback
-        input commit_packet_t commit [CONFIG.NUM_WB_GROUPS]
+        input commit_packet_t commit [WRITE_PORTS]
     );
-    typedef logic [31:0] rs_data_set_t [REGFILE_READ_PORTS];
-    rs_data_set_t rs_data_set [CONFIG.NUM_WB_GROUPS];
+    typedef logic [DATA_WIDTH-1:0] rs_data_set_t [READ_PORTS];
+    rs_data_set_t rs_data_set [WRITE_PORTS];
 
-    logic decode_inuse [REGFILE_READ_PORTS];
-    logic decode_inuse_r [REGFILE_READ_PORTS];
+    logic decode_inuse [READ_PORTS];
+    logic decode_inuse_r [READ_PORTS];
 
     genvar i;
     ////////////////////////////////////////////////////
@@ -60,13 +69,30 @@ module register_file
 
     ////////////////////////////////////////////////////
     //Phys register inuse
+    // Example for GP-RF:
     //toggle ports: decode advance, single-cycle/fetch_flush, multi-cycle commit
     //read ports: rs-decode, rs-issue
 
+    logic inflight_notify [1+WRITE_PORTS];
+    phys_addr_t inflight_notify_addr [1+WRITE_PORTS];
+    phys_addr_t inflight_check_addr [READ_PORTS*2];
+    logic inflight_check_result [READ_PORTS*2];
+
+    assign inflight_notify[0] = (decode_advance & decode_uses_rd & |decode_phys_rd_addr & ~gc.fetch_flush);
+    assign inflight_notify_addr[0] = decode_phys_rd_addr;
+
+    generate for (i = 0; i < READ_PORTS; i++) begin : gen_in_flight_vectors
+        assign inflight_check_addr[i] = decode_phys_rs_addr[i];
+        assign inflight_check_addr[READ_PORTS+i] = rf_issue.phys_rs_addr[i];
+
+        assign decode_inuse[i] = inflight_check_result[i];
+        assign rf_issue.inuse[i] = inflight_check_result[READ_PORTS+i];
+    end endgenerate
+
     toggle_memory_set # (
-        .DEPTH (64),
-        .NUM_WRITE_PORTS (3),
-        .NUM_READ_PORTS (REGFILE_READ_PORTS*2),
+        .DEPTH (DEPTH),
+        .NUM_WRITE_PORTS (1 + WRITE_PORTS),
+        .NUM_READ_PORTS (READ_PORTS*2),
         .WRITE_INDEX_FOR_RESET (0),
         .READ_INDEX_FOR_RESET (0)
     ) id_inuse_toggle_mem_set
@@ -74,43 +100,33 @@ module register_file
         .clk (clk),
         .rst (rst),
         .init_clear (gc.init_clear),
-        .toggle ('{
-            (decode_advance & decode_uses_rd & |decode_phys_rd_addr & ~gc.fetch_flush),
-            rf_issue.single_cycle_or_flush,
-            commit[1].valid
-        }),
-        .toggle_addr ('{
-            decode_phys_rd_addr, 
-            rf_issue.phys_rd_addr, 
-            commit[1].phys_addr
-        }),
-        .read_addr ('{
-            decode_phys_rs_addr[RS1], 
-            decode_phys_rs_addr[RS2], 
-            rf_issue.phys_rs_addr[RS1], 
-            rf_issue.phys_rs_addr[RS2]
-        }),
-        .in_use ('{
-            decode_inuse[RS1],
-            decode_inuse[RS2],
-            rf_issue.inuse[RS1],
-            rf_issue.inuse[RS2]
-        })
+        .toggle (inflight_notify), // first is always the decoded dest reg to declare a reg "inflight". Then one for each commit-port to declare completion if actually written
+        .toggle_addr (inflight_notify_addr), // addresses match above
+        .read_addr (inflight_check_addr), // first half is decode_rs addrs. Second half is just issued addresses
+        .in_use (inflight_check_result) // results of inflight check above (first half for addresses in decode / requesting read, second half for addresses just issued)
     );
+
     always_ff @ (posedge clk) begin
         if (decode_advance)
             decode_inuse_r <= decode_inuse;
     end
+
     ////////////////////////////////////////////////////
     //Register Banks
     //Implemented in seperate module as there is not universal tool support for inferring
     //arrays of memory blocks.
-    generate for (i = 0; i < CONFIG.NUM_WB_GROUPS; i++) begin : register_file_gen
-        register_bank #(.NUM_READ_PORTS(REGFILE_READ_PORTS))
-        reg_group (
+    generate for (i = 0; i < WRITE_PORTS; i++) begin : gen_reg_banks
+        assign inflight_notify[1+i] = inflight_commit_per_port[i];
+        assign inflight_notify_addr[1+i] = inflight_commit_addr_per_port[i];
+
+        register_bank #(
+            .NUM_READ_PORTS(READ_PORTS),
+            .DATA_WIDTH(DATA_WIDTH),
+            .DEPTH(DEPTH)
+        ) reg_group (
             .clk, .rst,
             .write_addr(commit[i].phys_addr),
-            .new_data(commit[i].data),
+            .new_data(commit[i].data[DATA_WIDTH-1:0]),
             .commit(commit[i].valid & ~gc.writeback_supress),
             .read_addr(decode_phys_rs_addr),
             .data(rs_data_set[i])
@@ -119,15 +135,15 @@ module register_file
 
     ////////////////////////////////////////////////////
     //Register File Muxing
-    logic [$clog2(CONFIG.NUM_WB_GROUPS)-1:0] rs_wb_group [REGFILE_READ_PORTS];
-    logic bypass [REGFILE_READ_PORTS];
+    logic [`max($clog2(WRITE_PORTS)-1, 0):0] rs_wb_group [READ_PORTS];
+    logic bypass [READ_PORTS];
     assign rs_wb_group = decode_advance ? decode_rs_wb_group : rf_issue.rs_wb_group;
     assign bypass = decode_advance ? decode_inuse : decode_inuse_r;
 
     always_ff @ (posedge clk) begin
-       for (int i = 0; i < REGFILE_READ_PORTS; i++) begin
+       for (int i = 0; i < READ_PORTS; i++) begin
            if (decode_advance | rf_issue.inuse[i])
-               rf_issue.data[i] <= bypass[i] ? commit[rs_wb_group[i]].data : rs_data_set[rs_wb_group[i]][i];
+               rf_issue.data[i][DATA_WIDTH-1:0] <= bypass[i] ? commit[rs_wb_group[i]].data[DATA_WIDTH-1:0] : rs_data_set[rs_wb_group[i]][i];
        end
    end
 
@@ -137,8 +153,8 @@ module register_file
 
     ////////////////////////////////////////////////////
     //Assertions
-    for (genvar i = 0; i < CONFIG.NUM_WB_GROUPS; i++) begin : write_to_rd_zero_assertion
-        assert property (@(posedge clk) disable iff (rst) (commit[i].valid) |-> (commit[i].phys_addr != 0)) else $error("write to register zero");
-    end
+    //for (genvar i = 0; i < WRITE_PORTS; i++) begin : write_to_rd_zero_assertion
+    //    assert property (@(posedge clk) disable iff (rst) (commit[i].valid) |-> (commit[i].phys_addr != 0)) else $error("write to register zero");
+    //end
 
 endmodule

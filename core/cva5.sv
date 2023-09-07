@@ -69,9 +69,11 @@ module cva5
     //Non-writeback units
     localparam int unsigned BRANCH_UNIT_ID = DIV_UNIT_ID + 1;
     localparam int unsigned IEC_UNIT_ID = BRANCH_UNIT_ID + 1;
+    localparam int unsigned FPU_UNIT_ID = IEC_UNIT_ID + int'(CONFIG.INCLUDE_FPU_SINGLE);
+    localparam int unsigned FP_TO_GP_UNIT_ID = FPU_UNIT_ID + int'(CONFIG.INCLUDE_FPU_SINGLE);
 
     //Total number of units
-    localparam int unsigned NUM_UNITS = IEC_UNIT_ID + 1; 
+    localparam int unsigned NUM_UNITS = FP_TO_GP_UNIT_ID + 1; 
 
     localparam unit_id_param_t UNIT_IDS = '{
         ALU : ALU_UNIT_ID,
@@ -80,7 +82,9 @@ module cva5
         MUL : MUL_UNIT_ID,
         DIV : DIV_UNIT_ID,
         BR : BRANCH_UNIT_ID,
-        IEC : IEC_UNIT_ID
+        IEC : IEC_UNIT_ID,
+        FPU : FPU_UNIT_ID,
+        FP_TO_GP : FP_TO_GP_UNIT_ID 
     };
 
     ////////////////////////////////////////////////////
@@ -88,12 +92,17 @@ module cva5
     //
     localparam int unsigned NUM_WB_UNITS_GROUP_1 = 1;//ALU
     localparam int unsigned NUM_WB_UNITS_GROUP_2 = 1 + int'(CONFIG.INCLUDE_CSRS) + int'(CONFIG.INCLUDE_MUL) + int'(CONFIG.INCLUDE_DIV);//LS
-    localparam int unsigned NUM_WB_UNITS = NUM_WB_UNITS_GROUP_1 + NUM_WB_UNITS_GROUP_2;
+    localparam int unsigned NUM_WB_UNITS_GP = NUM_WB_UNITS_GROUP_1 + NUM_WB_UNITS_GROUP_2;
+    localparam int unsigned NUM_WB_UNITS_FP = int'(CONFIG.INCLUDE_FPU_SINGLE) * 3;
+    localparam int unsigned NUM_WB_UNITS_FP_MIN_1 = NUM_WB_UNITS_FP < 1? 1 : NUM_WB_UNITS_FP;
+    localparam int unsigned NUM_WB_UNITS = NUM_WB_UNITS_GP + NUM_WB_UNITS_FP;
 
     localparam int unsigned NUM_INSTR_INV_TARGETS = ((CONFIG.INSTRUCTION_COHERENCY)? (int'(CONFIG.INCLUDE_ICACHE) + int'(CONFIG.INCLUDE_BRANCH_PREDICTOR) + EXTERNAL_INSTR_INV_TARGETS) : (0));
     localparam int unsigned INSTR_INV_TARGET_ICACHE = 0;
     localparam int unsigned INSTR_INV_TARGET_BRANCH_PRED = int'(CONFIG.INCLUDE_ICACHE);
     localparam int unsigned INSTR_INV_TARGET_FIRST_EXTERNAL = int'(CONFIG.INCLUDE_ICACHE) + int'(CONFIG.INCLUDE_BRANCH_PREDICTOR);
+
+    localparam rf_params_t RF_CONFIG = get_derived_rf_params(CONFIG);
 
     ////////////////////////////////////////////////////
     //Connecting Signals
@@ -112,7 +121,17 @@ module cva5
     ras_interface ras();
 
     issue_packet_t issue;
-    register_file_issue_interface #(.NUM_WB_GROUPS(CONFIG.NUM_WB_GROUPS)) rf_issue();
+    register_file_issue_interface #(
+        .NUM_WB_GROUPS(RF_CONFIG.GP_WB_GROUP_COUNT),
+        .READ_PORTS(RF_CONFIG.GP_READ_PORT_COUNT),
+        .DATA_WIDTH(32)
+    ) gp_rf_issue();
+
+    register_file_issue_interface #(
+        .NUM_WB_GROUPS(FP_RF_FIXED_WRITE_PORT_COUNT),
+        .READ_PORTS(FP_RF_FIXED_READ_PORT_COUNT),
+        .DATA_WIDTH(34)
+    ) fp_rf_issue();
 
 
     alu_inputs_t alu_inputs;
@@ -120,6 +139,8 @@ module cva5
     branch_inputs_t branch_inputs;
     mul_inputs_t mul_inputs;
     div_inputs_t div_inputs;
+    fpu_inputs_t fpu_inputs;
+    fp_to_gp_inputs_t fp_to_gp_inputs;
     gc_inputs_t gc_inputs;
     csr_inputs_t csr_inputs;
 
@@ -128,7 +149,9 @@ module cva5
     exception_packet_t  ls_exception;
     logic ls_exception_is_store;
 
-    unit_writeback_interface unit_wb  [NUM_WB_UNITS]();
+    unit_writeback_interface #(
+        .RESULT_WIDTH(MAX_POSSIBLE_REG_BITS)
+    ) unit_wb [NUM_WB_UNITS] ();
 
     mmu_interface immu();
     mmu_interface dmmu();
@@ -158,8 +181,8 @@ module cva5
     rs_addr_t decode_rd_addr;
     exception_sources_t decode_exception_unit;
     phys_addr_t decode_phys_rd_addr;
-    phys_addr_t decode_phys_rs_addr [REGFILE_READ_PORTS];
-    logic [$clog2(CONFIG.NUM_WB_GROUPS)-1:0] decode_rs_wb_group [REGFILE_READ_PORTS];
+    phys_addr_t decode_phys_rs_addr [MAX_RS_REG_COUNT_PER_INSN];
+    logic [$clog2(RF_CONFIG.TOTAL_WB_GROUP_COUNT)-1:0] decode_rs_wb_group [MAX_RS_REG_COUNT_PER_INSN];
 
         //ID freeing
     retire_packet_t retire;
@@ -167,12 +190,12 @@ module cva5
     id_t retire_ids_next [RETIRE_PORTS];
     logic retire_port_valid [RETIRE_PORTS];
         //Writeback
-    wb_packet_t wb_packet [CONFIG.NUM_WB_GROUPS];
-    commit_packet_t commit_packet [CONFIG.NUM_WB_GROUPS];
+    wb_packet_t wb_packet [RF_CONFIG.TOTAL_WB_GROUP_COUNT];
+    commit_packet_t commit_packet [RF_CONFIG.TOTAL_WB_GROUP_COUNT];
          //Exception
     logic [31:0] oldest_pc;
 
-    renamer_interface #(.NUM_WB_GROUPS(CONFIG.NUM_WB_GROUPS)) decode_rename_interface ();
+    renamer_interface #(.NUM_WB_GROUPS(RF_CONFIG.TOTAL_WB_GROUP_COUNT)) decode_rename_interface ();
 
     //Global Control
     exception_interface exception [NUM_EXCEPTION_SOURCES]();
@@ -223,6 +246,7 @@ module cva5
     logic tr_mul_op;
     logic tr_div_op;
     logic tr_misc_op;
+    logic tr_float_op;
 
     logic tr_instruction_issued_dec;
     logic [31:0] tr_instruction_pc_dec;
@@ -268,8 +292,10 @@ module cva5
 
     ////////////////////////////////////////////////////
     // ID support
-    instruction_metadata_and_id_management #(.CONFIG(CONFIG))
-    id_block (
+    instruction_metadata_and_id_management #(
+        .CONFIG(CONFIG),
+        .RF_CONFIG(RF_CONFIG)
+    ) id_block (
         .clk (clk),
         .rst (rst),
         .gc (gc),
@@ -386,8 +412,10 @@ module cva5
 
     ////////////////////////////////////////////////////
     //Renamer
-    renamer #(.CONFIG(CONFIG)) 
-    renamer_block (
+    renamer #(
+        .CONFIG(CONFIG),
+        .RF_CONFIG(RF_CONFIG)
+    ) renamer_block (
         .clk (clk),
         .rst (rst),
         .gc (gc),
@@ -421,7 +449,8 @@ module cva5
         .instruction_issued (instruction_issued),
         .instruction_issued_with_rd (instruction_issued_with_rd),
         .issue (issue),
-        .rf (rf_issue),
+        .gp_rf (gp_rf_issue),
+        .fp_rf (fp_rf_issue),
         .alu_inputs (alu_inputs),
         .ls_inputs (ls_inputs),
         .branch_inputs (branch_inputs),
@@ -429,6 +458,8 @@ module cva5
         .csr_inputs (csr_inputs),
         .mul_inputs (mul_inputs),
         .div_inputs (div_inputs),
+        .fpu_inputs (fpu_inputs),
+        .fp_to_gp_inputs (fp_to_gp_inputs),
         .unit_issue (unit_issue),
         .gc (gc),
         .current_privilege (current_privilege),
@@ -449,6 +480,7 @@ module cva5
         .tr_mul_op (tr_mul_op),
         .tr_div_op (tr_div_op),
         .tr_misc_op (tr_misc_op),
+        .tr_float_op (tr_float_op),
         .tr_instruction_issued_dec (tr_instruction_issued_dec),
         .tr_instruction_pc_dec (tr_instruction_pc_dec),
         .tr_instruction_data_dec (tr_instruction_data_dec)
@@ -456,19 +488,61 @@ module cva5
 
     ////////////////////////////////////////////////////
     //Register File
-    register_file #(.CONFIG(CONFIG))
-    register_file_block (
+    register_file #(
+        .WRITE_PORTS(RF_CONFIG.GP_WB_GROUP_COUNT),
+        .READ_PORTS(RF_CONFIG.GP_READ_PORT_COUNT),
+        .DEPTH(64),
+        .DATA_WIDTH(32)
+    ) regfile_gp (
+        .clk (clk),
+        .rst (rst),
+        .gc (gc),
+        .decode_phys_rs_addr (decode_phys_rs_addr[RS1:RS2]),
+        .decode_phys_rd_addr (decode_phys_rd_addr),
+        .decode_rs_wb_group ('{ decode_rs_wb_group[RS1][0], decode_rs_wb_group[RS2][0]}),
+        .decode_advance (decode_advance),
+        .decode_uses_rd (decode_uses_rd),
+
+        .inflight_commit_addr_per_port ('{
+            gp_rf_issue.phys_rd_addr, 
+            commit_packet[1].phys_addr
+        }),
+        .inflight_commit_per_port ('{
+            gp_rf_issue.single_cycle_or_flush, // TODO is this actually equivalent to commit[0].valid? looks that way, but I cannot prove it, might be to shorten this specific path
+            commit_packet[1].valid
+        }),
+
+        .rf_issue (gp_rf_issue),
+        .commit (commit_packet[0:1])
+    );
+
+    generate if (CONFIG.INCLUDE_FPU_SINGLE) begin : gen_fp_regfile
+        register_file #(
+        .WRITE_PORTS(RF_CONFIG.FP_WB_GROUP_COUNT),
+        .READ_PORTS(RF_CONFIG.FP_READ_PORT_COUNT),
+        .DEPTH(64),
+        .DATA_WIDTH(34)
+        ) regfile_fp (
         .clk (clk),
         .rst (rst),
         .gc (gc),
         .decode_phys_rs_addr (decode_phys_rs_addr),
         .decode_phys_rd_addr (decode_phys_rd_addr),
-        .decode_rs_wb_group (decode_rs_wb_group),
+        .decode_rs_wb_group ('{'0, '0, '0}),
         .decode_advance (decode_advance),
         .decode_uses_rd (decode_uses_rd),
-        .rf_issue (rf_issue),
-        .commit (commit_packet)
+
+        .inflight_commit_addr_per_port ('{
+            commit_packet[2].phys_addr
+        }),
+        .inflight_commit_per_port ('{
+            commit_packet[2].valid
+        }),
+
+        .rf_issue (fp_rf_issue),
+        .commit (commit_packet[2:2])
     );
+    end endgenerate
 
     ////////////////////////////////////////////////////
     //Execution Units
@@ -686,9 +760,10 @@ module cva5
     //Writeback
     //First writeback port: ALU
     //Second writeback port: LS, CSR, [MUL], [DIV]
-    localparam int unsigned NUM_UNITS_PER_PORT [CONFIG.NUM_WB_GROUPS] = '{NUM_WB_UNITS_GROUP_1, NUM_WB_UNITS_GROUP_2};
+    localparam int unsigned NUM_UNITS_PER_PORT [MAX_WB_GROUPS] = '{NUM_WB_UNITS_GROUP_1, NUM_WB_UNITS_GROUP_2, NUM_WB_UNITS_FP};
     writeback #(
         .CONFIG (CONFIG),
+        .RF_CONFIG(RF_CONFIG),
         .NUM_UNITS (NUM_UNITS_PER_PORT),
         .NUM_WB_UNITS (NUM_WB_UNITS)
     )
@@ -736,6 +811,7 @@ module cva5
             tr.events.mul_op <= tr_mul_op;
             tr.events.div_op <= tr_div_op;
             tr.events.misc_op <= tr_misc_op;
+            tr.events.float_op <= tr_float_op;
             tr.events.branch_correct <= tr_branch_correct;
             tr.events.branch_misspredict <= tr_branch_misspredict;
             tr.events.return_correct <= tr_return_correct;

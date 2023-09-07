@@ -27,7 +27,8 @@ module renamer
     import cva5_types::*;
 
     # (
-        parameter cpu_config_t CONFIG = EXAMPLE_CONFIG
+        parameter cpu_config_t CONFIG = EXAMPLE_CONFIG,
+        parameter rf_params_t RF_CONFIG = get_derived_rf_params(CONFIG)
     )
 
     (
@@ -51,7 +52,7 @@ module renamer
         rs_addr_t rd_addr;
         phys_addr_t spec_phys_addr;
         phys_addr_t previous_phys_addr;
-        logic [$clog2(CONFIG.NUM_WB_GROUPS)-1:0] previous_wb_group;
+        logic [$clog2(RF_CONFIG.TOTAL_WB_GROUP_COUNT)-1:0] previous_wb_group;
     } renamer_metadata_t;
     renamer_metadata_t inuse_list_input;
     renamer_metadata_t inuse_list_output;
@@ -69,7 +70,7 @@ module renamer
     //Zero register is never renamed
     //If a renamed destination is flushed in the issue stage, state is rolled back
     //When an instruction reaches the retire stage it either commits or reverts its renaming depending on whether the instruction retires or is discarded
-    assign rename_valid = (~gc.fetch_flush) & decode_advance & decode.uses_rd & |decode.rd_addr;
+    assign rename_valid = (~gc.fetch_flush) & decode_advance & (decode.uses_rd_gp | decode.uses_rd_fp) & |decode.rd_addr;
 
     //Revert physcial address assignment on a flush
     assign rollback = gc.fetch_flush & issue.stage_valid & issue.uses_rd & |issue.rd_addr;
@@ -124,7 +125,7 @@ module renamer
     //During post reset init, initialize rd_to_phys with in-use list (lower 32 registers)
     typedef struct packed{
         phys_addr_t phys_addr;
-        logic [$clog2(CONFIG.NUM_WB_GROUPS)-1:0] wb_group;
+        logic [$clog2(RF_CONFIG.TOTAL_WB_GROUP_COUNT)-1:0] wb_group;
     } spec_table_t;
     rs_addr_t spec_table_read_addr [REGFILE_READ_PORTS+1];
     spec_table_t spec_table_read_data [REGFILE_READ_PORTS+1];
@@ -168,7 +169,7 @@ module renamer
     assign spec_table_next = spec_table_next_mux[spec_table_sel];
 
     assign spec_table_read_addr[0] = spec_table_write_index;
-    assign spec_table_read_addr[1:REGFILE_READ_PORTS] = '{decode.rs_addr[RS1], decode.rs_addr[RS2]};
+    assign spec_table_read_addr[1:REGFILE_READ_PORTS] = '{decode.rs_addr[RS1].rs, decode.rs_addr[RS2].rs};
 
     lutram_1w_mr #(
         .WIDTH($bits(spec_table_t)),

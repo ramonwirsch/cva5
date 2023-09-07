@@ -27,7 +27,9 @@ module register_bank
     import cva5_types::*;
     
     #(
-        parameter NUM_READ_PORTS = 2
+        parameter NUM_READ_PORTS = 2,
+        parameter DATA_WIDTH = 32,
+        parameter DEPTH = 64
     )
     (
         input logic clk,
@@ -35,15 +37,15 @@ module register_bank
 
         //Writeback
         input phys_addr_t write_addr,
-        input logic [31:0] new_data,
+        input logic [DATA_WIDTH-1:0] new_data,
         input logic commit,
 
         //Issue
         input phys_addr_t read_addr [NUM_READ_PORTS],
-        output logic [31:0] data [NUM_READ_PORTS]
+        output logic [DATA_WIDTH-1:0] data [NUM_READ_PORTS]
     );
 
-    (* ramstyle = "MLAB, no_rw_check" *) logic [31:0] register_file_bank [64];
+    (* ramstyle = "MLAB, no_rw_check" *) logic [DATA_WIDTH-1:0] register_file_bank [DEPTH];
     ////////////////////////////////////////////////////
     //Implementation
 

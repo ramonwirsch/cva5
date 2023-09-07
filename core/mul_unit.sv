@@ -94,7 +94,7 @@ module mul_unit
 
     //WB interface
     ////////////////////////////////////////////////////
-    assign wb.rd = mulh[1] ? result[63:32] : result[31:0];
+    assign wb.rd[31:0] = mulh[1] ? result[63:32] : result[31:0];
     assign wb.done = valid[1];
     assign wb.id = id[1];
 

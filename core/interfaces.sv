@@ -64,7 +64,7 @@ interface unit_issue_interface;
     modport unit (output ready, input possible_issue, new_request, id);
 endinterface
 
-interface unit_writeback_interface;
+interface unit_writeback_interface #(parameter RESULT_WIDTH = 32);
     import riscv_types::*;
     import cva5_types::*;
 
@@ -72,7 +72,7 @@ interface unit_writeback_interface;
 
         id_t id;
         logic done;
-        logic [XLEN-1:0] rd;
+        logic [RESULT_WIDTH-1:0] rd;
 
         modport unit (
             input ack,
@@ -327,42 +327,49 @@ interface unsigned_division_interface #(parameter DATA_WIDTH = 32);
     modport divider (output remainder, quotient, done, input dividend, dividend_CLZ, divisor, divisor_CLZ, divisor_is_zero, start);
 endinterface
 
+`define max(a,b) ((a > b) ? a : b)
+
 interface renamer_interface #(parameter NUM_WB_GROUPS = 2);
     import cva5_config::*;
     import riscv_types::*;
     import cva5_types::*;
 
     rs_addr_t rd_addr;
-    rs_addr_t rs_addr [REGFILE_READ_PORTS];
-    logic [$clog2(NUM_WB_GROUPS)-1:0] rd_wb_group;
-    logic uses_rd;
+    rf_addr_t rs_addr [MAX_RS_REG_COUNT_PER_INSN];
+    logic [`max($clog2(NUM_WB_GROUPS)-1, 0):0] rd_wb_group;
+    logic uses_rd_gp;
+    logic uses_rd_fp;
     id_t id;
 
-    phys_addr_t phys_rs_addr [REGFILE_READ_PORTS];
+    phys_addr_t phys_rs_addr [MAX_RS_REG_COUNT_PER_INSN];
     phys_addr_t phys_rd_addr;
 
-    logic [$clog2(NUM_WB_GROUPS)-1:0] rs_wb_group [REGFILE_READ_PORTS];
+    logic [$clog2(NUM_WB_GROUPS)-1:0] rs_wb_group [MAX_RS_REG_COUNT_PER_INSN];
 
     modport renamer (
-        input rd_addr, rs_addr, rd_wb_group, uses_rd, id,
+        input rd_addr, rs_addr, rd_wb_group, uses_rd_gp, uses_rd_fp, id,
         output phys_rs_addr, rs_wb_group, phys_rd_addr
     );
     modport decode (
         input phys_rs_addr, rs_wb_group, phys_rd_addr,
-        output rd_addr, rs_addr, rd_wb_group, uses_rd, id
+        output rd_addr, rs_addr, rd_wb_group, uses_rd_gp, uses_rd_fp, id
     );
 endinterface
 
-interface register_file_issue_interface #(parameter NUM_WB_GROUPS = 2);
+interface register_file_issue_interface #(
+    parameter NUM_WB_GROUPS = 2,
+    parameter READ_PORTS = 2,
+    parameter DATA_WIDTH = 32
+    );
     import cva5_config::*;
     import riscv_types::*;
     import cva5_types::*;
 
     //read interface
-    phys_addr_t phys_rs_addr [REGFILE_READ_PORTS];
-    logic [$clog2(NUM_WB_GROUPS)-1:0] rs_wb_group [REGFILE_READ_PORTS];
-    logic [31:0] data [REGFILE_READ_PORTS];
-    logic inuse [REGFILE_READ_PORTS];
+    phys_addr_t phys_rs_addr [READ_PORTS];
+    logic [`max($clog2(NUM_WB_GROUPS)-1, 0):0] rs_wb_group [READ_PORTS];
+    logic [DATA_WIDTH-1:0] data [READ_PORTS];
+    logic inuse [READ_PORTS];
 
     //issue write interface
     phys_addr_t phys_rd_addr;

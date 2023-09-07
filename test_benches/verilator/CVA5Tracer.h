@@ -85,6 +85,7 @@ static const char * const defaultEventNames[] = {
     "mul_op",
     "div_op",
     "misc_op",
+    "float_op",
     "branch_correct",
     "branch_misspredict",
     "return_correct",

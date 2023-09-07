@@ -27,7 +27,8 @@ module instruction_metadata_and_id_management
     import cva5_types::*;
 
     # (
-        parameter cpu_config_t CONFIG = EXAMPLE_CONFIG
+        parameter cpu_config_t CONFIG = EXAMPLE_CONFIG,
+        parameter rf_params_t RF_CONFIG = get_derived_rf_params(CONFIG)
     )
 
     (
@@ -62,8 +63,8 @@ module instruction_metadata_and_id_management
         input logic instruction_issued_with_rd,
 
         //WB
-        input wb_packet_t wb_packet [CONFIG.NUM_WB_GROUPS],
-        output commit_packet_t commit_packet [CONFIG.NUM_WB_GROUPS],
+        input wb_packet_t wb_packet [RF_CONFIG.TOTAL_WB_GROUP_COUNT],
+        output commit_packet_t commit_packet [RF_CONFIG.TOTAL_WB_GROUP_COUNT],
 
         //Retirer
         output retire_packet_t retire,
@@ -325,13 +326,13 @@ module instruction_metadata_and_id_management
     assign decode.fetch_metadata = CONFIG.INCLUDE_M_MODE ? fetch_metadata_table[decode_id] : '{ok : 1, error_code : INST_ACCESS_FAULT};
 
     //Writeback/Commit support
-    phys_addr_t commit_phys_addr [CONFIG.NUM_WB_GROUPS];
+    phys_addr_t commit_phys_addr [RF_CONFIG.TOTAL_WB_GROUP_COUNT];
     assign commit_phys_addr[0] = issue.phys_rd_addr;
-     generate for (i = 1; i < CONFIG.NUM_WB_GROUPS; i++) begin : gen_commit_phys_addr
+     generate for (i = 1; i < RF_CONFIG.TOTAL_WB_GROUP_COUNT; i++) begin : gen_commit_phys_addr
         assign commit_phys_addr[i] = phys_addr_table[wb_packet[i].id];
      end endgenerate
 
-     generate for (i = 0; i < CONFIG.NUM_WB_GROUPS; i++) begin : gen_commit_packet
+     generate for (i = 0; i < RF_CONFIG.TOTAL_WB_GROUP_COUNT; i++) begin : gen_commit_packet
         assign commit_packet[i].id = wb_packet[i].id;
         assign commit_packet[i].phys_addr = commit_phys_addr[i];        
         assign commit_packet[i].valid = wb_packet[i].valid & |commit_phys_addr[i];

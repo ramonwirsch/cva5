@@ -150,7 +150,7 @@ module csr_unit
             wb.id <= issue.id;
     end
 
-    assign wb.rd = selected_csr_r;
+    assign wb.rd[31:0] = selected_csr_r;
 
     ////////////////////////////////////////////////////
     //Shared logic

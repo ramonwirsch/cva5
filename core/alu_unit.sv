@@ -83,7 +83,7 @@ module alu_unit
     ////////////////////////////////////////////////////
     //Output
     assign issue.ready = 1;
-    assign wb.rd = result;
+    assign wb.rd[31:0] = result;
     assign wb.done = issue.possible_issue;
     assign wb.id = issue.id;
 

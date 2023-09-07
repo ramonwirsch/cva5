@@ -28,7 +28,8 @@ module writeback
     
     # (
         parameter cpu_config_t CONFIG = EXAMPLE_CONFIG,
-        parameter int unsigned NUM_UNITS [CONFIG.NUM_WB_GROUPS] = '{1, 4},
+        parameter rf_params_t RF_CONFIG = get_derived_rf_params(CONFIG),
+        parameter int unsigned NUM_UNITS [RF_CONFIG.TOTAL_WB_GROUP_COUNT] = '{1, 4},
         parameter int unsigned NUM_WB_UNITS = 5
     )
 
@@ -38,28 +39,28 @@ module writeback
         //Unit writeback
         unit_writeback_interface.wb unit_wb[NUM_WB_UNITS],
         //WB output
-        output wb_packet_t wb_packet [CONFIG.NUM_WB_GROUPS],
+        output wb_packet_t wb_packet [RF_CONFIG.TOTAL_WB_GROUP_COUNT],
         //Snoop interface (LS unit)
         output wb_packet_t wb_snoop
     );
 
     //Writeback
-    logic [NUM_WB_UNITS-1:0] unit_ack [CONFIG.NUM_WB_GROUPS];
+    logic [NUM_WB_UNITS-1:0] unit_ack [RF_CONFIG.TOTAL_WB_GROUP_COUNT];
     //aliases for write-back-interface signals
-    id_t [NUM_WB_UNITS-1:0] unit_instruction_id [CONFIG.NUM_WB_GROUPS];
-    logic [NUM_WB_UNITS-1:0] unit_done [CONFIG.NUM_WB_GROUPS];
+    id_t [NUM_WB_UNITS-1:0] unit_instruction_id [RF_CONFIG.TOTAL_WB_GROUP_COUNT];
+    logic [NUM_WB_UNITS-1:0] unit_done [RF_CONFIG.TOTAL_WB_GROUP_COUNT];
 
-    typedef logic [XLEN-1:0] unit_rd_t [NUM_WB_UNITS];
-    unit_rd_t unit_rd [CONFIG.NUM_WB_GROUPS];
+    typedef logic [MAX_POSSIBLE_REG_BITS-1:0] unit_rd_t [NUM_WB_UNITS];
+    unit_rd_t unit_rd [RF_CONFIG.TOTAL_WB_GROUP_COUNT];
     //Per-ID muxes for commit buffer
-    logic [$clog2(NUM_WB_UNITS)-1:0] unit_sel [CONFIG.NUM_WB_GROUPS];
+    logic [$clog2(NUM_WB_UNITS)-1:0] unit_sel [RF_CONFIG.TOTAL_WB_GROUP_COUNT];
 
-    typedef int unsigned unit_count_t [CONFIG.NUM_WB_GROUPS];
+    typedef int unsigned unit_count_t [RF_CONFIG.TOTAL_WB_GROUP_COUNT];
 
-    function unit_count_t get_cumulative_unit_count();
+    function static unit_count_t get_cumulative_unit_count();
         unit_count_t counts;
         int unsigned cumulative_count = 0;
-        for (int i = 0; i < CONFIG.NUM_WB_GROUPS; i++) begin
+        for (int i = 0; i < RF_CONFIG.TOTAL_WB_GROUP_COUNT; i++) begin
             counts[i] = cumulative_count;
             cumulative_count += NUM_UNITS[i];
         end
@@ -73,7 +74,7 @@ module writeback
     //Implementation
     //Re-assigning interface inputs to array types so that they can be dynamically indexed
     generate
-        for (i = 0; i < CONFIG.NUM_WB_GROUPS; i++) begin : gen_wb_group_unpacking
+        for (i = 0; i < RF_CONFIG.TOTAL_WB_GROUP_COUNT; i++) begin : gen_wb_group_unpacking
             for (j = 0; j < NUM_UNITS[i]; j++) begin : gen_wb_unit_unpacking
                 assign unit_instruction_id[i][j] = unit_wb[CUMULATIVE_NUM_UNITS[i] + j].id;
                 assign unit_done[i][j] = unit_wb[CUMULATIVE_NUM_UNITS[i] + j].done;
@@ -85,7 +86,7 @@ module writeback
     //As units are selected for commit ports based on their unit ID,
     //for each additional commit port one unit can be skipped for the commit mux
     generate
-        for (i = 0; i < CONFIG.NUM_WB_GROUPS; i++) begin : gen_wb_port_grouping
+        for (i = 0; i < RF_CONFIG.TOTAL_WB_GROUP_COUNT; i++) begin : gen_wb_port_grouping
             for (j = 0; j < NUM_UNITS[i]; j++) begin : gen_wb_unit_grouping
                 assign unit_rd[i][j] = unit_wb[CUMULATIVE_NUM_UNITS[i] + j].rd;
             end
@@ -97,7 +98,7 @@ module writeback
     //Iterating through all commit ports:
     //   Search for complete units (in fixed unit order)
     //   Assign to a commit port, mask that unit and commit port
-    generate for (i = 0; i < CONFIG.NUM_WB_GROUPS; i++) begin : gen_wb_mux
+    generate for (i = 0; i < RF_CONFIG.TOTAL_WB_GROUP_COUNT; i++) begin : gen_wb_mux
         priority_encoder
             #(.WIDTH(NUM_UNITS[i]))
         unit_done_encoder

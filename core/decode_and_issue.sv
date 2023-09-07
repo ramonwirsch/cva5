@@ -29,6 +29,7 @@ module decode_and_issue
 
     # (
         parameter cpu_config_t CONFIG = EXAMPLE_CONFIG,
+        parameter rf_params_t RF_CONFIG = get_derived_rf_params(CONFIG),
         parameter NUM_UNITS = 7,
         parameter unit_id_param_t UNIT_IDS = EXAMPLE_UNIT_IDS
     )
@@ -49,15 +50,16 @@ module decode_and_issue
         output logic decode_uses_rd,
         output rs_addr_t decode_rd_addr,
         output phys_addr_t decode_phys_rd_addr,
-        output phys_addr_t decode_phys_rs_addr [REGFILE_READ_PORTS],
-        output logic [$clog2(CONFIG.NUM_WB_GROUPS)-1:0] decode_rs_wb_group [REGFILE_READ_PORTS],
+        output phys_addr_t decode_phys_rs_addr [MAX_RS_REG_COUNT_PER_INSN],
+        output logic [$clog2(RF_CONFIG.TOTAL_WB_GROUP_COUNT)-1:0] decode_rs_wb_group [MAX_RS_REG_COUNT_PER_INSN],
 
         output logic instruction_issued,
         output logic instruction_issued_with_rd,
         output issue_packet_t issue,
 
         //Register File
-        register_file_issue_interface.issue rf,
+        register_file_issue_interface.issue gp_rf,
+        register_file_issue_interface.issue fp_rf,
 
         output alu_inputs_t alu_inputs,
         output load_store_inputs_t ls_inputs,
@@ -66,6 +68,8 @@ module decode_and_issue
         output csr_inputs_t csr_inputs,
         output mul_inputs_t mul_inputs,
         output div_inputs_t div_inputs,
+        output fpu_inputs_t fpu_inputs,
+        output fp_to_gp_inputs_t fp_to_gp_inputs,
 
         unit_issue_interface.decode unit_issue [NUM_UNITS-1:0],
 
@@ -92,6 +96,7 @@ module decode_and_issue
         output logic tr_mul_op,
         output logic tr_div_op,
         output logic tr_misc_op,
+        output logic tr_float_op,
 
         output logic tr_instruction_issued_dec,
         output logic [31:0] tr_instruction_pc_dec,
@@ -101,11 +106,14 @@ module decode_and_issue
     logic [2:0] fn3;
     logic [6:0] opcode;
     logic [4:0] opcode_trim;
+    logic [6:0] fn7;
+    logic [4:0] fn7_trim;
 
-    logic uses_rs [REGFILE_READ_PORTS];
-    logic uses_rd;
+    logic uses_rs [RF_CONFIG.TOTAL_READ_PORT_COUNT];
+    logic uses_rd_for_gp;
+    logic uses_rd_for_fp;
 
-    rs_addr_t rs_addr [REGFILE_READ_PORTS];
+    rf_addr_t rs_addr [MAX_RS_REG_COUNT_PER_INSN];
     rs_addr_t rd_addr;
 
     logic is_csr;
@@ -124,17 +132,17 @@ module decode_and_issue
     logic [NUM_UNITS-1:0] issue_ready;
     logic [NUM_UNITS-1:0] issue_to;
 
-    rs_addr_t issue_rs_addr [REGFILE_READ_PORTS];
-    phys_addr_t issue_phys_rs_addr [REGFILE_READ_PORTS];
-    logic [$clog2(CONFIG.NUM_WB_GROUPS)-1:0] issue_rs_wb_group [REGFILE_READ_PORTS];
-    logic issue_uses_rs [REGFILE_READ_PORTS];
+    rf_addr_t issue_rs_addr [MAX_RS_REG_COUNT_PER_INSN];
+    phys_addr_t issue_phys_rs_addr [MAX_RS_REG_COUNT_PER_INSN];
+    logic [$clog2(RF_CONFIG.TOTAL_WB_GROUP_COUNT)-1:0] issue_rs_wb_group [MAX_RS_REG_COUNT_PER_INSN];
+    logic issue_uses_rs [RF_CONFIG.TOTAL_READ_PORT_COUNT];
 
     logic pre_issue_exception_pending;
     logic illegal_instruction_pattern;
 
     logic issue_stage_ready;
 
-    logic [REGFILE_READ_PORTS-1:0] rs_conflict;
+    logic [RF_CONFIG.TOTAL_READ_PORT_COUNT-1:0] rs_conflict;
 
     genvar i;
     ////////////////////////////////////////////////////
@@ -150,8 +158,11 @@ module decode_and_issue
     assign opcode = decode.instruction[6:0];
     assign opcode_trim = opcode[6:2];
     assign fn3 = decode.instruction[14:12];
-    assign rs_addr[RS1] = decode.instruction[19:15];
-    assign rs_addr[RS2] = decode.instruction[24:20];
+    assign fn7 = decode.instruction[31:25];
+    assign fn7_trim = fn7[6:2];
+    assign rs_addr[RS1].rs = decode.instruction[19:15];
+    assign rs_addr[RS2].rs = decode.instruction[24:20];
+    assign rs_addr[RS3].rs = decode.instruction[31:27];
     assign rd_addr = decode.instruction[11:7];
 
     assign is_csr = CONFIG.INCLUDE_CSRS & (opcode_trim == SYSTEM_T) & (fn3 != 0);
@@ -162,15 +173,45 @@ module decode_and_issue
 
     ////////////////////////////////////////////////////
     //Register File Support
-    assign uses_rs[RS1] = opcode_trim inside {JALR_T, BRANCH_T, LOAD_T, STORE_T, ARITH_IMM_T, ARITH_T, AMO_T} | is_csr;
-    assign uses_rs[RS2] = opcode_trim inside {BRANCH_T, ARITH_T, AMO_T};//Stores are exempted due to store forwarding
-    assign uses_rd = opcode_trim inside {LUI_T, AUIPC_T, JAL_T, JALR_T, LOAD_T, ARITH_IMM_T, ARITH_T} | is_csr;
+    localparam RSG1 = 0;
+    localparam RSG2 = 1;
+    localparam RSF1 = 2;
+    localparam RSF2 = 3;
+    localparam RSF3 = 4;
+
+    logic rsg1_by_float;
+    logic rd_for_gp_float;
+
+    assign rsg1_by_float = CONFIG.INCLUDE_FPU_SINGLE && (opcode_trim inside {FLW_T, FSW_T} || (opcode_trim == FP_T && fn7_trim inside {FCVT_TO_FP_fn7_T, FMV_TO_FP_fn7_T}));
+    assign rd_for_gp_float = CONFIG.INCLUDE_FPU_SINGLE && (opcode_trim == FP_T && fn7_trim inside {FCVT_TO_GP_fn7_T, FCLASS_MV_TO_GP_fn7_T, FCMP_fn7_T});
+
+    assign uses_rs[RSG1] = opcode_trim inside {JALR_T, BRANCH_T, LOAD_T, STORE_T, ARITH_IMM_T, ARITH_T, AMO_T} || is_csr || rsg1_by_float;
+    assign uses_rs[RSG2] = opcode_trim inside {BRANCH_T, ARITH_T, AMO_T}; //Stores are exempted due to store forwarding
+    assign uses_rd_for_gp = opcode_trim inside {LUI_T, AUIPC_T, JAL_T, JALR_T, LOAD_T, ARITH_IMM_T, ARITH_T} || is_csr || rd_for_gp_float;
+
+    generate if (CONFIG.INCLUDE_FPU_SINGLE) begin: gen_fp_reg_decoding
+        assign uses_rs[RSF1] = opcode_trim inside {FMADD_S_T, FMSUB_S_T, FNMADD_S_T, FNMSUB_S_T} || (opcode_trim == FP_T & !(fn7_trim inside {FMV_TO_FP_fn7_T, FCVT_TO_FP_fn7_T}));
+        assign uses_rs[RSF2] = opcode_trim inside {FMADD_S_T, FMSUB_S_T, FNMADD_S_T, FNMSUB_S_T, FSW_T} || (opcode_trim == FP_T && !(fn7_trim inside {FCVT_TO_FP_fn7_T, FCVT_TO_GP_fn7_T, FMV_TO_FP_fn7_T, FSQRT_fn7_T, FCLASS_MV_TO_GP_fn7_T}));
+        //TODO check if FSW also uses the forwarding that exempts rsg2 from use?
+        assign uses_rs[RSF3] = opcode_trim inside {FMADD_S_T, FMSUB_S_T, FNMADD_S_T, FNMSUB_S_T};
+        assign uses_rd_for_fp = opcode_trim inside {FLW_T, FMADD_S_T, FMSUB_S_T, FNMADD_S_T, FNMSUB_S_T, FP_T} && !(fn7_trim inside {FCVT_TO_GP_fn7_T, FCLASS_MV_TO_GP_fn7_T, FCMP_fn7_T});
+
+        assign rs_addr[RS1].isFloat = uses_rs[RSF1];
+        assign rs_addr[RS2].isFloat = uses_rs[RSF2];
+        assign rs_addr[RS3].isFloat = 1;
+    end else begin
+
+        assign rs_addr[RS1].isFloat = 0;
+        assign rs_addr[RS2].isFloat = 0;
+        assign rs_addr[RS3].isFloat = 1;
+        assign uses_rd_for_fp = 0;
+    end endgenerate
 
     ////////////////////////////////////////////////////
     //Unit Determination
     assign unit_needed[UNIT_IDS.BR] = opcode_trim inside {BRANCH_T, JAL_T, JALR_T};
-    assign unit_needed[UNIT_IDS.ALU] = (opcode_trim inside {ARITH_T, ARITH_IMM_T, AUIPC_T, LUI_T, JAL_T, JALR_T}) & ~mult_div_op;
-    assign unit_needed[UNIT_IDS.LS] = opcode_trim inside {LOAD_T, STORE_T, AMO_T} | is_fence;
+    assign unit_needed[UNIT_IDS.ALU] = (opcode_trim inside {ARITH_T, ARITH_IMM_T, AUIPC_T, LUI_T, JAL_T, JALR_T}) && ~mult_div_op;
+    assign unit_needed[UNIT_IDS.LS] = opcode_trim inside {LOAD_T, STORE_T, AMO_T} || is_fence || (CONFIG.INCLUDE_FPU_SINGLE && opcode_trim inside {FLW_T, FSW_T});
     generate if (CONFIG.INCLUDE_CSRS)
         assign unit_needed[UNIT_IDS.CSR] = is_csr;
     endgenerate
@@ -185,17 +226,29 @@ module decode_and_issue
         assign unit_needed[UNIT_IDS.DIV] = mult_div_op && fn3[2];
     endgenerate
 
+    generate if (CONFIG.INCLUDE_FPU_SINGLE) begin: gen_fpu_unit_sel
+        assign unit_needed[UNIT_IDS.FPU] = opcode_trim inside {FMADD_S_T, FMSUB_S_T, FNMADD_S_T, FNMSUB_S_T} || (opcode_trim == FP_T && !(fn7_trim inside {FCVT_TO_GP_fn7_T, FCLASS_MV_TO_GP_fn7_T, FCMP_fn7_T}));
+        assign unit_needed[UNIT_IDS.FP_TO_GP] = opcode_trim == FP_T && fn7_trim inside {FCVT_TO_GP_fn7_T, FCLASS_MV_TO_GP_fn7_T, FCMP_fn7_T};
+        //TODO also split out the GP_TO_FP? possibly split FPU into separate pipelines like FMAC, FSQRT, FBIT, FDIV, because FPU will do nothing else then split and merge between those, just without the unit interfaces...
+
+        assign renamer.rd_wb_group = (unit_needed[UNIT_IDS.FPU] || opcode_trim == FLW_T)? 2 : (unit_needed[UNIT_IDS.ALU]? 0 : 1);
+    end else begin
+        assign renamer.rd_wb_group = ~unit_needed[UNIT_IDS.ALU];//TODO: automate generation of wb group logic
+    end endgenerate
+
     ////////////////////////////////////////////////////
     //Renamer Support
     assign renamer.rd_addr = rd_addr;
     assign renamer.rs_addr = rs_addr;
-    assign renamer.uses_rd = uses_rd;
-    assign renamer.rd_wb_group = ~unit_needed[UNIT_IDS.ALU];//TODO: automate generation of wb group logic
+    assign renamer.uses_rd_gp = uses_rd_for_gp;
+    assign renamer.uses_rd_fp = uses_rd_for_fp;
+    
+    //TODO for now, only 1 FP write port, so rd_wb_group is D/C if uses_rd_fp is true
     assign renamer.id = decode.id;
 
     ////////////////////////////////////////////////////
     //Decode ID Support
-    assign decode_uses_rd = uses_rd;
+    assign decode_uses_rd = uses_rd_for_gp;
     assign decode_rd_addr = rd_addr;
     assign decode_phys_rd_addr = renamer.phys_rd_addr;
     assign decode_phys_rs_addr = renamer.phys_rs_addr;
@@ -219,7 +272,7 @@ module decode_and_issue
             issue.id <= decode.id;
             issue.exception_unit <= decode_exception_unit;
             issue_uses_rs <= uses_rs;
-            issue.uses_rd <= uses_rd;
+            issue.uses_rd <= uses_rd_for_gp;
         end
     end
 
@@ -243,8 +296,8 @@ module decode_and_issue
 
     ////////////////////////////////////////////////////
     //Issue Determination
-    generate for (i=0; i<REGFILE_READ_PORTS; i++)
-        assign rs_conflict[i] = rf.inuse[i] & issue_uses_rs[i];
+    generate for (i=0; i< RF_CONFIG.TOTAL_READ_PORT_COUNT; i++)
+        assign rs_conflict[i] = ((i < RF_CONFIG.GP_READ_PORT_COUNT)? gp_rf.inuse[1'(i)] : fp_rf.inuse[i-RF_CONFIG.GP_READ_PORT_COUNT])  & issue_uses_rs[i];
     endgenerate
     assign operands_ready = ~|rs_conflict;
 
@@ -258,11 +311,11 @@ module decode_and_issue
 
     ////////////////////////////////////////////////////
     //Register File Issue Interface
-    assign rf.phys_rs_addr = issue_phys_rs_addr;
-    assign rf.phys_rd_addr = issue.phys_rd_addr;
-    assign rf.rs_wb_group = issue_rs_wb_group;
+    assign gp_rf.phys_rs_addr = issue_phys_rs_addr[RS1:RS2];
+    assign gp_rf.phys_rd_addr = issue.phys_rd_addr;
+    assign gp_rf.rs_wb_group = '{ issue_rs_wb_group[RS1][0], issue_rs_wb_group[RS2][0]};
     
-    assign rf.single_cycle_or_flush = (instruction_issued_with_rd & |issue.rd_addr & ~issue.is_multicycle) | (issue.stage_valid & issue.uses_rd & |issue.rd_addr & gc.fetch_flush);
+    assign gp_rf.single_cycle_or_flush = (instruction_issued_with_rd & |issue.rd_addr & ~issue.is_multicycle) | (issue.stage_valid & issue.uses_rd & |issue.rd_addr & gc.fetch_flush);
     
     ////////////////////////////////////////////////////
     //ALU unit inputs
@@ -314,9 +367,9 @@ module decode_and_issue
 
     //Shifter related
     assign alu_inputs.lshift = ~issue.fn3[2];
-    assign alu_inputs.shift_amount = alu_imm_type ? issue_rs_addr[RS2] : rf.data[RS2][4:0];
-    assign alu_inputs.arith = rf.data[RS1][XLEN-1] & issue.instruction[30];//shift in bit
-    assign alu_inputs.shifter_in = rf.data[RS1];
+    assign alu_inputs.shift_amount = alu_imm_type ? issue_rs_addr[RS2].rs : gp_rf.data[RSG2][4:0];
+    assign alu_inputs.arith = gp_rf.data[RSG1][XLEN-1] & issue.instruction[30];//shift in bit
+    assign alu_inputs.shifter_in = gp_rf.data[RSG1];
 
     //LUI, AUIPC, JAL, JALR
     assign alu_inputs.constant_adder = constant_alu;
@@ -324,8 +377,8 @@ module decode_and_issue
     //logic and adder
     assign alu_inputs.subtract = alu_subtract;
     assign alu_inputs.logic_op = alu_logic_op_r;
-    assign alu_inputs.in1 = {(rf.data[RS1][XLEN-1] & ~issue.fn3[0]), rf.data[RS1]};//(fn3[0]  is SLTU_fn3);
-    assign alu_rs2_data = alu_imm_type ? 32'(signed'(issue.instruction[31:20])) : rf.data[RS2];
+    assign alu_inputs.in1 = {(gp_rf.data[RSG1][XLEN-1] & ~issue.fn3[0]), gp_rf.data[RSG1]};//(fn3[0]  is SLTU_fn3);
+    assign alu_rs2_data = alu_imm_type ? 32'(signed'(issue.instruction[31:20])) : gp_rf.data[RSG2];
     assign alu_inputs.in2 = {(alu_rs2_data[XLEN-1] & ~issue.fn3[0]), alu_rs2_data};
 
     assign alu_inputs.alu_op = alu_op_r;
@@ -381,10 +434,10 @@ module decode_and_issue
     assign ls_inputs.store = is_store_r;
     assign ls_inputs.fence = is_fence_r;
     assign ls_inputs.fn3 = amo_op ? LS_W_fn3 : issue.fn3;
-    assign ls_inputs.rs1 = rf.data[RS1];
-    assign ls_inputs.rs2 = rf.data[RS2];
-    assign ls_inputs.forwarded_store = rf.inuse[RS2];
-    assign ls_inputs.store_forward_id = rd_to_id_table[issue_rs_addr[RS2]];
+    assign ls_inputs.rs1 = gp_rf.data[RSG1];
+    assign ls_inputs.rs2 = gp_rf.data[RSG2];
+    assign ls_inputs.forwarded_store = gp_rf.inuse[RSG2];
+    assign ls_inputs.store_forward_id = rd_to_id_table[issue_rs_addr[RS2].rs];
 
     ////////////////////////////////////////////////////
     //Branch unit inputs
@@ -396,9 +449,9 @@ module decode_and_issue
     logic rs1_eq_rd;
     logic is_return;
     logic is_call;
-    assign rs1_link = (rs_addr[RS1] inside {1,5});
+    assign rs1_link = (rs_addr[RS1].rs inside {1,5});
     assign rd_link = (rd_addr inside {1,5});
-    assign rs1_eq_rd = (rs_addr[RS1] == rd_addr);
+    assign rs1_eq_rd = (rs_addr[RS1].rs == rd_addr);
 
     logic br_use_signed;
 
@@ -447,8 +500,8 @@ module decode_and_issue
 
     assign branch_inputs.issue_pc = issue.pc;
     assign branch_inputs.issue_pc_valid = issue.stage_valid;
-    assign branch_inputs.rs1 = {(rf.data[RS1][31] & br_use_signed), rf.data[RS1]};
-    assign branch_inputs.rs2 = {(rf.data[RS2][31] & br_use_signed), rf.data[RS2]};
+    assign branch_inputs.rs1 = {(gp_rf.data[RSG1][31] & br_use_signed), gp_rf.data[RSG1]};
+    assign branch_inputs.rs2 = {(gp_rf.data[RSG2][31] & br_use_signed), gp_rf.data[RSG2]};
     assign branch_inputs.pc_p4 = constant_alu;
 
     ////////////////////////////////////////////////////
@@ -501,16 +554,16 @@ module decode_and_issue
     generate if (CONFIG.INCLUDE_CSRS) begin : gen_decode_csr_inputs
         assign csr_inputs.addr = issue.instruction[31:20];
         assign csr_inputs.op = issue.fn3[1:0];
-        assign csr_inputs.data = issue.fn3[2] ? {27'b0, issue_rs_addr[RS1]} : rf.data[RS1];
+        assign csr_inputs.data = issue.fn3[2] ? {27'b0, issue_rs_addr[RS1].rs} : gp_rf.data[RSG1];
         assign csr_inputs.reads = ~((issue.fn3[1:0] == CSR_RW) && (issue.rd_addr == 0));
-        assign csr_inputs.writes = ~((issue.fn3[1:0] == CSR_RC) && (issue_rs_addr[RS1] == 0));
+        assign csr_inputs.writes = ~((issue.fn3[1:0] == CSR_RC) && (issue_rs_addr[RS1].rs == 0));
     end endgenerate
 
     ////////////////////////////////////////////////////
     //Mul unit inputs
     generate if (CONFIG.INCLUDE_MUL) begin : gen_decode_mul_inputs
-        assign mul_inputs.rs1 = rf.data[RS1];
-        assign mul_inputs.rs2 = rf.data[RS2];
+        assign mul_inputs.rs1 = gp_rf.data[RSG1];
+        assign mul_inputs.rs2 = gp_rf.data[RSG2];
         assign mul_inputs.op = issue.fn3[1:0];
     end endgenerate
 
@@ -528,11 +581,11 @@ module decode_and_issue
                 prev_div_rs_addr <= issue_phys_rs_addr[RS1:RS2];
         end
 
-        assign div_op_reuse = {prev_div_result_valid, prev_div_rs_addr[RS1], prev_div_rs_addr[RS2]} == {1'b1, issue_phys_rs_addr[RS1],issue_phys_rs_addr[RS2]};
+        assign div_op_reuse = {prev_div_result_valid, prev_div_rs_addr[RSG1], prev_div_rs_addr[RSG2]} == {1'b1, issue_phys_rs_addr[RSG1],issue_phys_rs_addr[RSG2]};
 
         //Clear if prev div inputs are overwritten by another instruction
-        assign div_rd_match[RS1] = (issue.phys_rd_addr == prev_div_rs_addr[RS1]);
-        assign div_rd_match[RS2] = (issue.phys_rd_addr == prev_div_rs_addr[RS2]);
+        assign div_rd_match[RSG1] = (issue.phys_rd_addr == prev_div_rs_addr[RSG1]);
+        assign div_rd_match[RSG2] = (issue.phys_rd_addr == prev_div_rs_addr[RSG2]);
         assign div_rs_overwrite = |div_rd_match;
 
         set_clr_reg_with_rst #(.SET_OVER_CLR(1), .WIDTH(1), .RST_VALUE(0)) prev_div_result_valid_m (
@@ -542,10 +595,121 @@ module decode_and_issue
             .result(prev_div_result_valid)
         );
 
-        assign div_inputs.rs1 = rf.data[RS1];
-        assign div_inputs.rs2 = rf.data[RS2];
+        assign div_inputs.rs1 = gp_rf.data[RSG1];
+        assign div_inputs.rs2 = gp_rf.data[RSG2];
         assign div_inputs.op = issue.fn3[1:0];
         assign div_inputs.reuse_result = div_op_reuse;
+    end endgenerate
+
+    ////////////////////////////////////////////////////
+    //FPU unit inputs
+    generate if (CONFIG.INCLUDE_FPU_SINGLE) begin : gen_decode_fpu_inputs
+        fpmac_op_t fpmac_op;
+        fpmac_op_t fpmac_op_r;
+        fpu_op_t fpu_op;
+        fpu_op_t fpu_op_r;
+        fp_to_gp_op_t fp_to_gp_op;
+        fp_to_gp_op_t fp_to_gp_op_r;
+
+
+        always_comb begin
+            
+            fpmac_op.mul = 0;
+            fpmac_op.add_mul_rs3 = 0;
+            fpmac_op.add_rs1_rs2 = 0;
+            fpmac_op.ovr_1st_add_in_sign = ORG_A_SIGN;
+            fpmac_op.negate_2nd_add_in = 0;
+
+            if (opcode_trim inside {FMADD_S_T, FMSUB_S_T, FNMADD_S_T, FNMSUB_S_T}) begin
+                fpu_op = FPMAC_OP;
+                fpmac_op.mul = 1;
+                fpmac_op.add_mul_rs3 = 1;
+                if (opcode_trim inside {FNMADD_S_T, FNMSUB_S_T})
+                    fpmac_op.ovr_1st_add_in_sign = INV_A_SIGN;
+                fpmac_op.negate_2nd_add_in = opcode_trim inside {FMSUB_S_T, FNMSUB_S_T};
+            end else begin
+                case (fn7_trim)
+                    FADD_fn7_T : begin
+                        fpu_op = FPMAC_OP;
+                        fpmac_op.add_rs1_rs2 = 1;
+                    end
+                    FSUB_fn7_T : begin
+                        fpu_op = FPMAC_OP;
+                        fpmac_op.add_rs1_rs2 = 1;
+                        fpmac_op.negate_2nd_add_in = 1;
+                    end
+                    FMUL_fn7_T : begin
+                        fpu_op = FPMAC_OP;
+                        fpmac_op.mul = 1;
+                    end
+                    FDIV_fn7_T : fpu_op = FPDIV_OP;
+                    FSQRT_fn7_T : fpu_op = FPSQRT_OP;
+                    FMUX_fn7_T : begin
+                        case(fn3[0])
+                            0 : fpu_op = FPMIN_OP;
+                            default : fpu_op = FPMAX_OP;
+                        endcase
+                    end
+                    FCVT_TO_FP_fn7_T : begin
+                        case(rs_addr[RS2].rs[0])
+                            0 : fpu_op = FPCVT_FROM_I_OP;
+                            default : fpu_op = FPCVT_FROM_U_OP;
+                        endcase
+                    end
+                    FMV_TO_FP_fn7_T : fpu_op = FP_FROM_IEEE_OP;
+                    FSGN_fn7_T : begin
+                        fpu_op = FPMAC_OP;
+                        case (fn3)
+                            FMAX_FLT_FCLASS_FSGNJN_fn3 : fpmac_op.ovr_1st_add_in_sign = INV_B_SIGN;
+                            FEQ_FSGNJX_fn3 : fpmac_op.ovr_1st_add_in_sign = XOR_SIGNS;
+                            default : fpmac_op.ovr_1st_add_in_sign = ORG_B_SIGN;
+                        endcase
+                    end
+                    default : fpu_op = FPMAC_OP;
+                endcase
+            end
+
+            case (fn7_trim)
+                FCLASS_MV_TO_GP_fn7_T : begin
+                    case(fn3[0])
+                        0 : fp_to_gp_op = FP_TO_IEEE_OP;
+                        default : fp_to_gp_op = FPCLASS_OP;
+                    endcase
+                end
+                FCVT_TO_GP_fn7_T : begin
+                    case(fn3[0])
+                        0 : fp_to_gp_op = FPCVT_TO_I_OP;
+                        default : fp_to_gp_op = FPCVT_TO_U_OP;
+                    endcase
+                end
+                FCMP_fn7_T : begin
+                    case (fn3)
+                        FMIN_FMV_FLE_FSGNJ_fn3 : fp_to_gp_op = FPLE_OP;
+                        FMAX_FLT_FCLASS_FSGNJN_fn3 : fp_to_gp_op = FPLT_OP;
+                        default : fp_to_gp_op = FPEQ_OP;
+                    endcase
+                end
+                default : fp_to_gp_op = FP_TO_IEEE_OP;
+            endcase
+        end
+
+        always_ff @(posedge clk) begin
+            if (issue_stage_ready) begin
+                fpmac_op_r <= fpmac_op;
+                fpu_op_r <= fpu_op;
+                fp_to_gp_op_r <= fp_to_gp_op;
+            end
+        end
+
+        assign fpu_inputs.rs1 = fp_rf.data[RS1];
+        assign fpu_inputs.rs2 = fp_rf.data[RS2];
+        assign fpu_inputs.rs3 = fp_rf.data[RS3];
+        assign fpu_inputs.op = fpu_op_r;
+        assign fpu_inputs.fpmac_op = fpmac_op_r;
+
+        assign fp_to_gp_inputs.rs1 = fp_rf.data[RS1];
+        assign fp_to_gp_inputs.rs2 = fp_rf.data[RS2];
+        assign fp_to_gp_inputs.op = fp_to_gp_op_r;
     end endgenerate
 
     ////////////////////////////////////////////////////
@@ -659,7 +823,8 @@ module decode_and_issue
 		assign tr_store_op = issue_stage_ready && instruction_issued && (issue.instruction[6:2] inside {STORE_T});
 		assign tr_mul_op = issue_stage_ready && instruction_issued && unit_needed_issue_stage[UNIT_IDS.MUL];
 		assign tr_div_op = issue_stage_ready && instruction_issued && unit_needed_issue_stage[UNIT_IDS.DIV];
-		assign tr_misc_op = issue_stage_ready && instruction_issued & ~(tr_alu_op | tr_branch_or_jump_op | tr_load_op | tr_store_op | tr_mul_op | tr_div_op);
+        assign tr_float_op = issue_stage_ready && instruction_issued && (unit_needed_issue_stage[UNIT_IDS.FPU] || unit_needed_issue_stage[UNIT_IDS.FP_TO_GP]);
+		assign tr_misc_op = issue_stage_ready && instruction_issued && ~(tr_alu_op | tr_branch_or_jump_op | tr_load_op | tr_store_op | tr_mul_op | tr_div_op | tr_float_op);
 
         assign tr_instruction_issued_dec = instruction_issued;
         assign tr_instruction_pc_dec = issue.pc;

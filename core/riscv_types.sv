@@ -24,8 +24,11 @@ package riscv_types;
     import cva5_config::*;
 
     localparam XLEN = 32;
+    localparam FLEN = 32;
     localparam PAGE_ADDR_W = 12;
     localparam ECODE_W = 5;
+
+    localparam MAX_RS_REG_COUNT_PER_INSN = 3;
 
     typedef logic [4:0] rs_addr_t;
 
@@ -51,7 +54,16 @@ package riscv_types;
         FENCE_T = 5'b00011,
         AMO_T = 5'b01011,
         SYSTEM_T = 5'b11100,
-        //end of RV32I
+        //end of RV32I,
+        // RV32F
+        FLW_T = 5'b00001,
+        FSW_T = 5'b01001,
+        FMADD_S_T = 5'b10000,
+        FMSUB_S_T = 5'b10001,
+        FNMSUB_S_T = 5'b10010,
+        FNMADD_S_T = 5'b10011,
+        FP_T = 5'b10100, // includes further FLOAT opcodes
+        // end of RV32F
         CUSTOM_T = 5'b11110
     } opcodes_trimmed_t;
 
@@ -98,6 +110,27 @@ package riscv_types;
         REM_fn3 = 3'b110,
         REMU_fn3 = 3'b111
     } fn3_mul_div_t;
+
+    typedef enum logic[2:0]{
+        FMIN_FMV_FLE_FSGNJ_fn3 = 3'b000,
+        FMAX_FLT_FCLASS_FSGNJN_fn3 = 3'b001,
+        FEQ_FSGNJX_fn3 = 3'b010
+    } fn3_float_s_t; // fn3 meaning for some float-arith fn7's, where fn3 is not rounding mode //TODO maybe split up?
+
+    typedef enum logic[4:0]{ // trimmed: lower 2 bits always zero on single-precision. lowest bit seems to declare double-mode
+        FADD_fn7_T = 5'b00000,
+        FSUB_fn7_T = 5'b00001,
+        FMUL_fn7_T = 5'b00010,
+        FDIV_fn7_T = 5'b00011,
+        FSGN_fn7_T = 5'b00100,
+        FMUX_fn7_T = 5'b00101,
+        FSQRT_fn7_T = 5'b01011,
+        FCMP_fn7_T = 5'b10100,
+        FCVT_TO_GP_fn7_T = 5'b11000,
+        FCVT_TO_FP_fn7_T = 5'b11010,
+        FCLASS_MV_TO_GP_fn7_T = 5'b11100,
+        FMV_TO_FP_fn7_T = 5'b11110
+    } fn7_float_trimmed_t;
 
     typedef enum logic [11:0] {
         ECALL_imm = 12'b000000000000,

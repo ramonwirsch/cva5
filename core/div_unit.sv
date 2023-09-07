@@ -171,7 +171,7 @@ module div_unit
 
     ////////////////////////////////////////////////////
     //Output
-    assign wb.rd = negate_if (wb_attr.remainder_op ? div_core.remainder : div_core.quotient, wb_attr.negate_result);
+    assign wb.rd[31:0] = negate_if (wb_attr.remainder_op ? div_core.remainder : div_core.quotient, wb_attr.negate_result);
 
     always_ff @ (posedge clk) begin
         if (rst)
