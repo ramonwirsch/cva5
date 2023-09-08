@@ -83,6 +83,18 @@ core/register_bank.sv
 core/register_file.sv
 core/writeback.sv
 
+fpu/flopoco/sv_impl/flopoco_to_ieee_sp.sv
+fpu/flopoco/sv_impl/ieee_to_flopoco_sp.sv
+fpu/flopoco/sv_impl/fp_rv_classify_sp.sv
+
+fpu/flopoco/sv_dpi_impl/f_compare_param_dpi.sv
+fpu/flopoco/sv_dpi_impl/f_compare_1cyc_dpi.sv
+fpu/flopoco/sv_dpi_impl/fp_to_fix_us_param_dpi.sv
+fpu/flopoco/sv_dpi_impl/fp_to_fix_us_1cyc_dpi.sv
+
+fpu/fp_to_gp_unit_sp.sv
+fpu/fpu_unit_sp.sv
+
 l2_arbiter/l2_reservation_logic.sv
 l2_arbiter/l2_round_robin.sv
 l2_arbiter/l2_arbiter.sv

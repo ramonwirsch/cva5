@@ -518,30 +518,30 @@ module cva5
 
     generate if (CONFIG.INCLUDE_FPU_SINGLE) begin : gen_fp_regfile
         register_file #(
-        .WRITE_PORTS(RF_CONFIG.FP_WB_GROUP_COUNT),
-        .READ_PORTS(RF_CONFIG.FP_READ_PORT_COUNT),
-        .DEPTH(64),
-        .DATA_WIDTH(34)
-        ) regfile_fp (
-        .clk (clk),
-        .rst (rst),
-        .gc (gc),
-        .decode_phys_rs_addr (decode_phys_rs_addr),
-        .decode_phys_rd_addr (decode_phys_rd_addr),
-        .decode_rs_wb_group ('{'0, '0, '0}),
-        .decode_advance (decode_advance),
-        .decode_uses_rd (decode_uses_rd),
+            .WRITE_PORTS(RF_CONFIG.FP_WB_GROUP_COUNT),
+            .READ_PORTS(RF_CONFIG.FP_READ_PORT_COUNT),
+            .DEPTH(64),
+            .DATA_WIDTH(34)
+            ) regfile_fp (
+            .clk (clk),
+            .rst (rst),
+            .gc (gc),
+            .decode_phys_rs_addr (decode_phys_rs_addr),
+            .decode_phys_rd_addr (decode_phys_rd_addr),
+            .decode_rs_wb_group ('{'0, '0, '0}),
+            .decode_advance (decode_advance),
+            .decode_uses_rd (decode_uses_rd),
 
-        .inflight_commit_addr_per_port ('{
-            commit_packet[2].phys_addr
-        }),
-        .inflight_commit_per_port ('{
-            commit_packet[2].valid
-        }),
+            .inflight_commit_addr_per_port ('{
+                commit_packet[2].phys_addr
+            }),
+            .inflight_commit_per_port ('{
+                commit_packet[2].valid
+            }),
 
-        .rf_issue (fp_rf_issue),
-        .commit (commit_packet[2:2])
-    );
+            .rf_issue (fp_rf_issue),
+            .commit (commit_packet[2:2])
+        );
     end endgenerate
 
     ////////////////////////////////////////////////////
@@ -753,6 +753,16 @@ module cva5
             .div_inputs (div_inputs),
             .issue (unit_issue[UNIT_IDS.DIV]), 
             .wb (unit_wb[UNIT_IDS.DIV])
+        );
+    end endgenerate
+
+    generate if (CONFIG.INCLUDE_FPU_SINGLE) begin : gen_fpu
+        fp_to_gp_unit_sp fp_to_gp_unit (
+            .clk(clk),
+            .rst(rst),
+            .inputs (fp_to_gp_inputs),
+            .issue (unit_issue[UNIT_IDS.FP_TO_GP]),
+            .wb (unit_wb[UNIT_IDS.FP_TO_GP])
         );
     end endgenerate
 

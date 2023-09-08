@@ -29,7 +29,7 @@ module writeback
     # (
         parameter cpu_config_t CONFIG = EXAMPLE_CONFIG,
         parameter rf_params_t RF_CONFIG = get_derived_rf_params(CONFIG),
-        parameter int unsigned NUM_UNITS [RF_CONFIG.TOTAL_WB_GROUP_COUNT] = '{1, 4},
+        parameter int unsigned NUM_UNITS [MAX_WB_GROUPS] = '{1, 4},
         parameter int unsigned NUM_WB_UNITS = 5
     )
 
