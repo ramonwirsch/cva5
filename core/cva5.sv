@@ -177,7 +177,8 @@ module cva5
         //Decode stage
     logic decode_advance;
     decode_packet_t decode;   
-    logic decode_uses_rd;
+    logic decode_uses_rd_gp;
+    logic decode_uses_rd_fp;
     rs_addr_t decode_rd_addr;
     exception_sources_t decode_exception_unit;
     phys_addr_t decode_phys_rd_addr;
@@ -310,7 +311,8 @@ module cva5
         .fetch_metadata (fetch_metadata),
         .decode (decode),
         .decode_advance (decode_advance),
-        .decode_uses_rd (decode_uses_rd),
+        .decode_uses_rd_gp (decode_uses_rd_gp),
+        .decode_uses_rd_fp (decode_uses_rd_fp),
         .decode_rd_addr (decode_rd_addr),
         .decode_phys_rd_addr (decode_phys_rd_addr),
         .decode_exception_unit (decode_exception_unit),
@@ -440,7 +442,8 @@ module cva5
         .decode (decode),
         .decode_advance (decode_advance),
         .renamer (decode_rename_interface),
-        .decode_uses_rd (decode_uses_rd),
+        .decode_uses_rd_gp (decode_uses_rd_gp),
+        .decode_uses_rd_fp (decode_uses_rd_fp),
         .decode_rd_addr (decode_rd_addr),
         .decode_exception_unit (decode_exception_unit),
         .decode_phys_rd_addr (decode_phys_rd_addr),
@@ -501,7 +504,7 @@ module cva5
         .decode_phys_rd_addr (decode_phys_rd_addr),
         .decode_rs_wb_group ('{ decode_rs_wb_group[RS1][0], decode_rs_wb_group[RS2][0]}),
         .decode_advance (decode_advance),
-        .decode_uses_rd (decode_uses_rd),
+        .decode_uses_rd (decode_uses_rd_gp),
 
         .inflight_commit_addr_per_port ('{
             gp_rf_issue.phys_rd_addr, 
@@ -530,7 +533,7 @@ module cva5
             .decode_phys_rd_addr (decode_phys_rd_addr),
             .decode_rs_wb_group ('{'0, '0, '0}),
             .decode_advance (decode_advance),
-            .decode_uses_rd (decode_uses_rd),
+            .decode_uses_rd (decode_uses_rd_fp),
 
             .inflight_commit_addr_per_port ('{
                 commit_packet[2].phys_addr

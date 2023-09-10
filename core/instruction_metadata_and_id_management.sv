@@ -51,7 +51,8 @@ module instruction_metadata_and_id_management
         //Decode ID
         output decode_packet_t decode,
         input logic decode_advance,
-        input logic decode_uses_rd,
+        input logic decode_uses_rd_gp,
+        input logic decode_uses_rd_fp,
         input rs_addr_t decode_rd_addr,
         input exception_sources_t decode_exception_unit,
         //renamer
@@ -145,7 +146,7 @@ module instruction_metadata_and_id_management
     //Number of read ports = RETIRE_PORTS
     always_ff @ (posedge clk) begin
         if (decode_advance)
-            uses_rd_table[decode_id] <= decode_uses_rd & |decode_rd_addr;
+            uses_rd_table[decode_id] <= (decode_uses_rd_gp && |decode_rd_addr) || decode_uses_rd_fp;
     end
 
     ////////////////////////////////////////////////////

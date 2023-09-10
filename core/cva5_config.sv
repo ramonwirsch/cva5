@@ -162,6 +162,8 @@ package cva5_config;
         int unsigned TOTAL_READ_PORT_COUNT;
         int unsigned GP_READ_PORT_COUNT;
         int unsigned FP_READ_PORT_COUNT;
+        int unsigned MAX_REGS_PER_ISSUE;
+        int unsigned TOTAL_ISA_REGS;
     } rf_params_t;
 
     localparam int unsigned GP_RF_FIXED_READ_PORT_COUNT = 2;
@@ -176,7 +178,9 @@ package cva5_config;
             FP_WB_GROUP_COUNT : (cpu.INCLUDE_FPU_SINGLE? FP_RF_FIXED_WRITE_PORT_COUNT : 0),
             TOTAL_READ_PORT_COUNT : GP_RF_FIXED_READ_PORT_COUNT + FP_RF_FIXED_READ_PORT_COUNT,
             GP_READ_PORT_COUNT : GP_RF_FIXED_READ_PORT_COUNT,
-            FP_READ_PORT_COUNT : (cpu.INCLUDE_FPU_SINGLE? FP_RF_FIXED_READ_PORT_COUNT : 0)
+            FP_READ_PORT_COUNT : (cpu.INCLUDE_FPU_SINGLE? FP_RF_FIXED_READ_PORT_COUNT : 0),
+            MAX_REGS_PER_ISSUE : (cpu.INCLUDE_FPU_SINGLE? FP_RF_FIXED_READ_PORT_COUNT : GP_RF_FIXED_READ_PORT_COUNT), // while FP insns may mix gp & fp reads, it will be at most 3
+            TOTAL_ISA_REGS : (cpu.INCLUDE_FPU_SINGLE? 32'd64 : 32'd32)
         };
     endfunction
 
@@ -321,6 +325,8 @@ package cva5_config;
 
     localparam MAX_POSSIBLE_REG_BITS = 34;
     localparam MAX_WB_GROUPS = 3;
+
+    localparam INFLIGHT_REG_WRITES_RESERVE = 32; // what was previously hardcoded. Check if we can gain anything by reducing this
 
     ////////////////////////////////////////////////////
     //Number of commit ports

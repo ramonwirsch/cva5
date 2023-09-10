@@ -47,7 +47,8 @@ module decode_and_issue
         //Renamer
         renamer_interface.decode renamer,
 
-        output logic decode_uses_rd,
+        output logic decode_uses_rd_gp,
+        output logic decode_uses_rd_fp,
         output rs_addr_t decode_rd_addr,
         output phys_addr_t decode_phys_rd_addr,
         output phys_addr_t decode_phys_rs_addr [MAX_RS_REG_COUNT_PER_INSN],
@@ -248,7 +249,8 @@ module decode_and_issue
 
     ////////////////////////////////////////////////////
     //Decode ID Support
-    assign decode_uses_rd = uses_rd_for_gp;
+    assign decode_uses_rd_gp = uses_rd_for_gp;
+    assign decode_uses_rd_fp = uses_rd_for_fp;
     assign decode_rd_addr = rd_addr;
     assign decode_phys_rd_addr = renamer.phys_rd_addr;
     assign decode_phys_rs_addr = renamer.phys_rs_addr;
@@ -266,7 +268,7 @@ module decode_and_issue
             issue_rs_addr <= rs_addr;
             issue_phys_rs_addr <= renamer.phys_rs_addr;
             issue_rs_wb_group <= renamer.rs_wb_group;
-            issue.rd_addr <= rd_addr;
+            issue.rd_addr <= {uses_rd_for_fp, rd_addr};
             issue.phys_rd_addr <= renamer.phys_rd_addr;
             issue.is_multicycle <= ~unit_needed[UNIT_IDS.ALU];
             issue.id <= decode.id;
@@ -423,10 +425,12 @@ module decode_and_issue
         end
     end
 
-    (* ramstyle = "MLAB, no_rw_check" *) id_t rd_to_id_table [32];
+    localparam RELEVANT_RD_BITS = $clog2(RF_CONFIG.TOTAL_ISA_REGS);
+
+    (* ramstyle = "MLAB, no_rw_check" *) id_t rd_to_id_table [RF_CONFIG.TOTAL_ISA_REGS];
     always_ff @ (posedge clk) begin
         if (instruction_issued_with_rd)
-            rd_to_id_table[issue.rd_addr] <= issue.id;
+            rd_to_id_table[issue.rd_addr[RELEVANT_RD_BITS-1:0]] <= issue.id;
     end
 
     assign ls_inputs.offset = ls_offset;
@@ -437,7 +441,7 @@ module decode_and_issue
     assign ls_inputs.rs1 = gp_rf.data[RSG1];
     assign ls_inputs.rs2 = gp_rf.data[RSG2];
     assign ls_inputs.forwarded_store = gp_rf.inuse[RSG2];
-    assign ls_inputs.store_forward_id = rd_to_id_table[issue_rs_addr[RS2].rs];
+    assign ls_inputs.store_forward_id = rd_to_id_table[issue_rs_addr[RS2][RELEVANT_RD_BITS-1:0]];
 
     ////////////////////////////////////////////////////
     //Branch unit inputs

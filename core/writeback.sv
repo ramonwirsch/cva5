@@ -126,7 +126,7 @@ module writeback
             wb_snoop.valid <= wb_packet[1].valid;
     end
     always_ff @ (posedge clk) begin
-        wb_snoop.data <= wb_packet[1].data;
+        wb_snoop.data <= wb_packet[1].data; //TODO may need to be extended to commit-port 3 (fp) with 34b to forward float results to fsw too
         wb_snoop.id <= wb_packet[1].id;
     end
 

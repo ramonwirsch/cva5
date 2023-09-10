@@ -82,7 +82,7 @@ package cva5_types;
         logic [2:0] fn3;
         logic [6:0] opcode;
 
-        rs_addr_t rd_addr;
+        rf_addr_t rd_addr;
         phys_addr_t phys_rd_addr;
 
         logic uses_rd;
