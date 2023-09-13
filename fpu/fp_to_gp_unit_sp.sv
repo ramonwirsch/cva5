@@ -12,7 +12,7 @@ module fp_to_gp_unit_sp
     );
 
     logic valid;
-    logic enable;
+    logic stage_advance;
 
 
     logic [31:0] toIeeeResult;
@@ -28,7 +28,7 @@ module fp_to_gp_unit_sp
 
     fp_to_fix_us to32b( // 1 cycle
         .clk(clk),
-        .ce(enable),
+        .ce(stage_advance),
         .I(inputs.rs1),
         .O(toUnsignedIntResult)
     );
@@ -43,7 +43,7 @@ module fp_to_gp_unit_sp
 
     f_compare cmp ( // 1 cycle
         .clk(clk),
-        .ce(enable),
+        .ce(stage_advance),
         .X(inputs.rs1),
         .Y(inputs.rs2),
         .unordered(),
@@ -84,7 +84,7 @@ module fp_to_gp_unit_sp
     always_ff @(posedge clk) begin
         if (rst)
             valid <= '0;
-        else if (enable) begin
+        else if (stage_advance) begin
             valid <= issue.new_request;
             id_r <= issue.id;
             op_r <= inputs.op;
@@ -93,8 +93,8 @@ module fp_to_gp_unit_sp
         end
     end
 
-    assign enable = wb.ack || (!valid && issue.new_request);
-    assign issue.ready = !valid || wb.ack;
+    assign stage_advance = !valid || wb.ack;
+    assign issue.ready = stage_advance;
 
 
     //WB interface

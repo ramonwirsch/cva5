@@ -69,7 +69,9 @@ module decode_and_issue
         output csr_inputs_t csr_inputs,
         output mul_inputs_t mul_inputs,
         output div_inputs_t div_inputs,
-        output fpu_inputs_t fpu_inputs,
+        output fp_mac_inputs_t fp_mac_inputs,
+        output fp_div_sqrt_inputs_t fp_div_inputs,
+        output fp_short_inputs_t fp_short_inputs,
         output fp_to_gp_inputs_t fp_to_gp_inputs,
 
         unit_issue_interface.decode unit_issue [NUM_UNITS-1:0],
@@ -228,11 +230,12 @@ module decode_and_issue
     endgenerate
 
     generate if (CONFIG.INCLUDE_FPU_SINGLE) begin: gen_fpu_unit_sel
-        assign unit_needed[UNIT_IDS.FPU] = opcode_trim inside {FMADD_S_T, FMSUB_S_T, FNMADD_S_T, FNMSUB_S_T} || (opcode_trim == FP_T && !(fn7_trim inside {FCVT_TO_GP_fn7_T, FCLASS_MV_TO_GP_fn7_T, FCMP_fn7_T}));
+        assign unit_needed[UNIT_IDS.FP_MAC] = opcode_trim inside {FMADD_S_T, FMSUB_S_T, FNMADD_S_T, FNMSUB_S_T} || (opcode_trim == FP_T && (fn7_trim inside {FADD_fn7_T, FSUB_fn7_T, FMUL_fn7_T, FSGN_fn7_T}));
+        assign unit_needed[UNIT_IDS.FP_DIV] = (opcode_trim == FP_T && (fn7_trim inside {FDIV_fn7_T, FSQRT_fn7_T}));
+        assign unit_needed[UNIT_IDS.FP_SHORT] = (opcode_trim == FP_T && (fn7_trim inside {FMV_TO_FP_fn7_T, FCVT_TO_FP_fn7_T, FMUX_fn7_T}));
         assign unit_needed[UNIT_IDS.FP_TO_GP] = opcode_trim == FP_T && fn7_trim inside {FCVT_TO_GP_fn7_T, FCLASS_MV_TO_GP_fn7_T, FCMP_fn7_T};
-        //TODO also split out the GP_TO_FP? possibly split FPU into separate pipelines like FMAC, FSQRT, FBIT, FDIV, because FPU will do nothing else then split and merge between those, just without the unit interfaces...
 
-        assign renamer.rd_wb_group = (unit_needed[UNIT_IDS.FPU] || opcode_trim == FLW_T)? 2 : (unit_needed[UNIT_IDS.ALU]? 0 : 1);
+        assign renamer.rd_wb_group = (unit_needed[UNIT_IDS.FP_MAC] || unit_needed[UNIT_IDS.FP_SHORT] || unit_needed[UNIT_IDS.FP_DIV] || opcode_trim == FLW_T)? 2 : (unit_needed[UNIT_IDS.ALU]? 0 : 1);
     end else begin
         assign renamer.rd_wb_group = ~unit_needed[UNIT_IDS.ALU];//TODO: automate generation of wb group logic
     end endgenerate
@@ -274,7 +277,7 @@ module decode_and_issue
             issue.id <= decode.id;
             issue.exception_unit <= decode_exception_unit;
             issue_uses_rs <= uses_rs;
-            issue.uses_rd <= uses_rd_for_gp;
+            issue.uses_rd <= uses_rd_for_gp || uses_rd_for_fp;
         end
     end
 
@@ -298,8 +301,11 @@ module decode_and_issue
 
     ////////////////////////////////////////////////////
     //Issue Determination
-    generate for (i=0; i< RF_CONFIG.TOTAL_READ_PORT_COUNT; i++)
-        assign rs_conflict[i] = ((i < RF_CONFIG.GP_READ_PORT_COUNT)? gp_rf.inuse[1'(i)] : fp_rf.inuse[i-RF_CONFIG.GP_READ_PORT_COUNT])  & issue_uses_rs[i];
+    generate
+        for (i=0; i< RF_CONFIG.GP_READ_PORT_COUNT; i++)
+            assign rs_conflict[i] = gp_rf.inuse[1'(i)] && issue_uses_rs[i];
+        for (i=RF_CONFIG.GP_READ_PORT_COUNT; i < RF_CONFIG.TOTAL_READ_PORT_COUNT; i++)
+            assign rs_conflict[i] = fp_rf.inuse[i-RF_CONFIG.GP_READ_PORT_COUNT] && issue_uses_rs[i];
     endgenerate
     assign operands_ready = ~|rs_conflict;
 
@@ -317,7 +323,12 @@ module decode_and_issue
     assign gp_rf.phys_rd_addr = issue.phys_rd_addr;
     assign gp_rf.rs_wb_group = '{ issue_rs_wb_group[RS1][0], issue_rs_wb_group[RS2][0]};
     
-    assign gp_rf.single_cycle_or_flush = (instruction_issued_with_rd & |issue.rd_addr & ~issue.is_multicycle) | (issue.stage_valid & issue.uses_rd & |issue.rd_addr & gc.fetch_flush);
+    assign gp_rf.single_cycle_or_flush = (instruction_issued_with_rd & |issue.rd_addr & ~issue.is_multicycle) | (issue.stage_valid & issue.uses_rd & !issue.rd_addr.isFloat & |issue.rd_addr & gc.fetch_flush);
+
+    assign fp_rf.phys_rs_addr = issue_phys_rs_addr[RS1:RS3];
+    assign fp_rf.phys_rd_addr = issue.phys_rd_addr;
+    assign fp_rf.rs_wb_group = '{0, 0, 0};
+    assign fp_rf.single_cycle_or_flush = issue.stage_valid && issue.uses_rd && issue.rd_addr.isFloat && gc.fetch_flush;
     
     ////////////////////////////////////////////////////
     //ALU unit inputs
@@ -595,7 +606,7 @@ module decode_and_issue
         set_clr_reg_with_rst #(.SET_OVER_CLR(1), .WIDTH(1), .RST_VALUE(0)) prev_div_result_valid_m (
             .clk, .rst,
             .set(instruction_issued & unit_needed_issue_stage[UNIT_IDS.DIV]),
-            .clr((instruction_issued & issue.uses_rd & div_rs_overwrite) | gc.writeback_supress), //No instructions will be issued while gc.writeback_supress is asserted
+            .clr((instruction_issued & issue.uses_rd & !issue.rd_addr.isFloat & div_rs_overwrite) | gc.writeback_supress), //No instructions will be issued while gc.writeback_supress is asserted
             .result(prev_div_result_valid)
         );
 
@@ -608,70 +619,73 @@ module decode_and_issue
     ////////////////////////////////////////////////////
     //FPU unit inputs
     generate if (CONFIG.INCLUDE_FPU_SINGLE) begin : gen_decode_fpu_inputs
-        fpmac_op_t fpmac_op;
-        fpmac_op_t fpmac_op_r;
-        fpu_op_t fpu_op;
-        fpu_op_t fpu_op_r;
+        fp_mac_op_t fp_mac_op;
+        fp_mac_op_t fp_mac_op_r;
+        logic fp_div_sqrt;
+        logic fp_div_sqrt_r;
+        fp_short_op_t fp_short_op;
+        fp_short_op_t fp_short_op_r;
         fp_to_gp_op_t fp_to_gp_op;
         fp_to_gp_op_t fp_to_gp_op_r;
 
 
         always_comb begin
             
-            fpmac_op.mul = 0;
-            fpmac_op.add_mul_rs3 = 0;
-            fpmac_op.add_rs1_rs2 = 0;
-            fpmac_op.ovr_1st_add_in_sign = ORG_A_SIGN;
-            fpmac_op.negate_2nd_add_in = 0;
+            fp_mac_op.mul = 0;
+            fp_mac_op.add_mul_rs3 = 0;
+            fp_mac_op.add_rs1_rs2 = 0;
+            fp_mac_op.ovr_1st_add_in_sign = ORG_A_SIGN;
+            fp_mac_op.negate_2nd_add_in = 0;
 
             if (opcode_trim inside {FMADD_S_T, FMSUB_S_T, FNMADD_S_T, FNMSUB_S_T}) begin
-                fpu_op = FPMAC_OP;
-                fpmac_op.mul = 1;
-                fpmac_op.add_mul_rs3 = 1;
+                fp_mac_op.mul = 1;
+                fp_mac_op.add_mul_rs3 = 1;
                 if (opcode_trim inside {FNMADD_S_T, FNMSUB_S_T})
-                    fpmac_op.ovr_1st_add_in_sign = INV_A_SIGN;
-                fpmac_op.negate_2nd_add_in = opcode_trim inside {FMSUB_S_T, FNMSUB_S_T};
+                    fp_mac_op.ovr_1st_add_in_sign = INV_A_SIGN;
+                fp_mac_op.negate_2nd_add_in = opcode_trim inside {FMSUB_S_T, FNMSUB_S_T};
             end else begin
                 case (fn7_trim)
                     FADD_fn7_T : begin
-                        fpu_op = FPMAC_OP;
-                        fpmac_op.add_rs1_rs2 = 1;
+                        fp_mac_op.add_rs1_rs2 = 1;
                     end
                     FSUB_fn7_T : begin
-                        fpu_op = FPMAC_OP;
-                        fpmac_op.add_rs1_rs2 = 1;
-                        fpmac_op.negate_2nd_add_in = 1;
+                        fp_mac_op.add_rs1_rs2 = 1;
+                        fp_mac_op.negate_2nd_add_in = 1;
                     end
                     FMUL_fn7_T : begin
-                        fpu_op = FPMAC_OP;
-                        fpmac_op.mul = 1;
+                        fp_mac_op.mul = 1;
                     end
-                    FDIV_fn7_T : fpu_op = FPDIV_OP;
-                    FSQRT_fn7_T : fpu_op = FPSQRT_OP;
-                    FMUX_fn7_T : begin
-                        case(fn3[0])
-                            0 : fpu_op = FPMIN_OP;
-                            default : fpu_op = FPMAX_OP;
-                        endcase
-                    end
-                    FCVT_TO_FP_fn7_T : begin
-                        case(rs_addr[RS2].rs[0])
-                            0 : fpu_op = FPCVT_FROM_I_OP;
-                            default : fpu_op = FPCVT_FROM_U_OP;
-                        endcase
-                    end
-                    FMV_TO_FP_fn7_T : fpu_op = FP_FROM_IEEE_OP;
-                    FSGN_fn7_T : begin
-                        fpu_op = FPMAC_OP;
+                    /*FSGN_fn7_T*/ default: begin
                         case (fn3)
-                            FMAX_FLT_FCLASS_FSGNJN_fn3 : fpmac_op.ovr_1st_add_in_sign = INV_B_SIGN;
-                            FEQ_FSGNJX_fn3 : fpmac_op.ovr_1st_add_in_sign = XOR_SIGNS;
-                            default : fpmac_op.ovr_1st_add_in_sign = ORG_B_SIGN;
+                            FMAX_FLT_FCLASS_FSGNJN_fn3 : fp_mac_op.ovr_1st_add_in_sign = INV_B_SIGN;
+                            FEQ_FSGNJX_fn3 : fp_mac_op.ovr_1st_add_in_sign = XOR_SIGNS;
+                            default : fp_mac_op.ovr_1st_add_in_sign = ORG_B_SIGN;
                         endcase
                     end
-                    default : fpu_op = FPMAC_OP;
+                    // default handled by initializing all op-bits to zero
                 endcase
             end
+
+            case (fn7_trim)
+                FSQRT_fn7_T : fp_div_sqrt = 1;
+                default: fp_div_sqrt = 0;
+            endcase
+
+            case (fn7_trim)
+                FMUX_fn7_T : begin
+                    case(fn3[0])
+                        0 : fp_short_op = FPMIN_OP;
+                        default : fp_short_op = FPMAX_OP;
+                    endcase
+                end
+                FCVT_TO_FP_fn7_T : begin
+                    case(rs_addr[RS2].rs[0])
+                        0 : fp_short_op = FPCVT_FROM_I_OP;
+                        default : fp_short_op = FPCVT_FROM_U_OP;
+                    endcase
+                end
+                /*FMV_TO_FP_fn7_T*/ default : fp_short_op = FP_FROM_IEEE_OP;
+            endcase
 
             case (fn7_trim)
                 FCLASS_MV_TO_GP_fn7_T : begin
@@ -699,21 +713,30 @@ module decode_and_issue
 
         always_ff @(posedge clk) begin
             if (issue_stage_ready) begin
-                fpmac_op_r <= fpmac_op;
-                fpu_op_r <= fpu_op;
+                fp_mac_op_r <= fp_mac_op;
+                fp_div_sqrt_r <= fp_div_sqrt;
+                fp_short_op_r <= fp_short_op;
                 fp_to_gp_op_r <= fp_to_gp_op;
             end
         end
 
-        assign fpu_inputs.rs1 = fp_rf.data[RS1];
-        assign fpu_inputs.rs2 = fp_rf.data[RS2];
-        assign fpu_inputs.rs3 = fp_rf.data[RS3];
-        assign fpu_inputs.op = fpu_op_r;
-        assign fpu_inputs.fpmac_op = fpmac_op_r;
+        assign fp_mac_inputs.rs1 = fp_rf.data[RS1];
+        assign fp_mac_inputs.rs2 = fp_rf.data[RS2];
+        assign fp_mac_inputs.rs3 = fp_rf.data[RS3];
+        assign fp_mac_inputs.op = fp_mac_op_r;
 
         assign fp_to_gp_inputs.rs1 = fp_rf.data[RS1];
         assign fp_to_gp_inputs.rs2 = fp_rf.data[RS2];
         assign fp_to_gp_inputs.op = fp_to_gp_op_r;
+
+        assign fp_div_inputs.rs1 = fp_rf.data[RS1];
+        assign fp_div_inputs.rs2 = fp_rf.data[RS2];
+        assign fp_div_inputs.sqrt = fp_div_sqrt_r;
+
+        assign fp_short_inputs.rs1 = fp_rf.data[RS1];
+        assign fp_short_inputs.rs1_gp = gp_rf.data[RSG1];
+        assign fp_short_inputs.rs2 = fp_rf.data[RS2];
+        assign fp_short_inputs.op = fp_short_op_r;
     end endgenerate
 
     ////////////////////////////////////////////////////
@@ -827,7 +850,7 @@ module decode_and_issue
 		assign tr_store_op = issue_stage_ready && instruction_issued && (issue.instruction[6:2] inside {STORE_T});
 		assign tr_mul_op = issue_stage_ready && instruction_issued && unit_needed_issue_stage[UNIT_IDS.MUL];
 		assign tr_div_op = issue_stage_ready && instruction_issued && unit_needed_issue_stage[UNIT_IDS.DIV];
-        assign tr_float_op = issue_stage_ready && instruction_issued && (unit_needed_issue_stage[UNIT_IDS.FPU] || unit_needed_issue_stage[UNIT_IDS.FP_TO_GP]);
+        assign tr_float_op = issue_stage_ready && instruction_issued && (unit_needed_issue_stage[UNIT_IDS.FP_MAC] || unit_needed_issue_stage[UNIT_IDS.FP_DIV] || unit_needed_issue_stage[UNIT_IDS.FP_SHORT] || unit_needed_issue_stage[UNIT_IDS.FP_TO_GP]);
 		assign tr_misc_op = issue_stage_ready && instruction_issued && ~(tr_alu_op | tr_branch_or_jump_op | tr_load_op | tr_store_op | tr_mul_op | tr_div_op | tr_float_op);
 
         assign tr_instruction_issued_dec = instruction_issued;

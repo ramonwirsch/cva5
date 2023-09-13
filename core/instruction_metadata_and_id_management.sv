@@ -240,9 +240,21 @@ module instruction_metadata_and_id_management
     //Non-writeback instructions not included as current instruction set
     //complete in their first cycle of the execute stage, or do not cause an
     //exception after that point
+
+    id_t inflight_notify_addrs [RF_CONFIG.TOTAL_WB_GROUP_COUNT];
+    logic inflight_notify [RF_CONFIG.TOTAL_WB_GROUP_COUNT];
+
+    assign inflight_notify_addrs[0] = issue.id;
+    assign inflight_notify[0] = (instruction_issued_with_rd & issue.is_multicycle);
+
+    generate for (i=1; i < RF_CONFIG.TOTAL_WB_GROUP_COUNT; i++) begin : gen_inflight_toggle
+        assign inflight_notify_addrs[i] = wb_packet[i].id;
+        assign inflight_notify[i] = wb_packet[i].valid;
+    end endgenerate
+
     toggle_memory_set # (
         .DEPTH (MAX_IDS),
-        .NUM_WRITE_PORTS (2),
+        .NUM_WRITE_PORTS (RF_CONFIG.TOTAL_WB_GROUP_COUNT), // -1 for port0 (alu) excluded, +1 for marking newly issued ops as inflight
         .NUM_READ_PORTS (RETIRE_PORTS),
         .WRITE_INDEX_FOR_RESET (0),
         .READ_INDEX_FOR_RESET (0)
@@ -251,8 +263,8 @@ module instruction_metadata_and_id_management
         .clk (clk),
         .rst (rst),
         .init_clear (gc.init_clear),
-        .toggle ('{(instruction_issued_with_rd & issue.is_multicycle), wb_packet[1].valid}),
-        .toggle_addr ('{issue.id, wb_packet[1].id}),
+        .toggle (inflight_notify),
+        .toggle_addr (inflight_notify_addrs),
         .read_addr (retire_ids_next),
         .in_use (id_waiting_for_writeback)
     );

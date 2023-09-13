@@ -29,8 +29,8 @@ module writeback
     # (
         parameter cpu_config_t CONFIG = EXAMPLE_CONFIG,
         parameter rf_params_t RF_CONFIG = get_derived_rf_params(CONFIG),
-        parameter int unsigned NUM_UNITS [MAX_WB_GROUPS] = '{1, 4},
-        parameter int unsigned NUM_WB_UNITS = 5
+        parameter int unsigned NUM_WB_UNITS_PER_PORT [MAX_WB_GROUPS] = '{1, 4, 3},
+        parameter int unsigned NUM_WB_UNITS = 9
     )
 
     (
@@ -62,7 +62,7 @@ module writeback
         int unsigned cumulative_count = 0;
         for (int i = 0; i < RF_CONFIG.TOTAL_WB_GROUP_COUNT; i++) begin
             counts[i] = cumulative_count;
-            cumulative_count += NUM_UNITS[i];
+            cumulative_count += NUM_WB_UNITS_PER_PORT[i];
         end
         return counts;
     endfunction
@@ -75,7 +75,7 @@ module writeback
     //Re-assigning interface inputs to array types so that they can be dynamically indexed
     generate
         for (i = 0; i < RF_CONFIG.TOTAL_WB_GROUP_COUNT; i++) begin : gen_wb_group_unpacking
-            for (j = 0; j < NUM_UNITS[i]; j++) begin : gen_wb_unit_unpacking
+            for (j = 0; j < NUM_WB_UNITS_PER_PORT[i]; j++) begin : gen_wb_unit_unpacking
                 assign unit_instruction_id[i][j] = unit_wb[CUMULATIVE_NUM_UNITS[i] + j].id;
                 assign unit_done[i][j] = unit_wb[CUMULATIVE_NUM_UNITS[i] + j].done;
                 assign unit_wb[CUMULATIVE_NUM_UNITS[i] + j].ack = unit_ack[i][j];
@@ -87,7 +87,7 @@ module writeback
     //for each additional commit port one unit can be skipped for the commit mux
     generate
         for (i = 0; i < RF_CONFIG.TOTAL_WB_GROUP_COUNT; i++) begin : gen_wb_port_grouping
-            for (j = 0; j < NUM_UNITS[i]; j++) begin : gen_wb_unit_grouping
+            for (j = 0; j < NUM_WB_UNITS_PER_PORT[i]; j++) begin : gen_wb_unit_grouping
                 assign unit_rd[i][j] = unit_wb[CUMULATIVE_NUM_UNITS[i] + j].rd;
             end
         end
@@ -100,11 +100,11 @@ module writeback
     //   Assign to a commit port, mask that unit and commit port
     generate for (i = 0; i < RF_CONFIG.TOTAL_WB_GROUP_COUNT; i++) begin : gen_wb_mux
         priority_encoder
-            #(.WIDTH(NUM_UNITS[i]))
+            #(.WIDTH(NUM_WB_UNITS_PER_PORT[i]))
         unit_done_encoder
         (
-            .priority_vector (unit_done[i][NUM_UNITS[i]-1 : 0]),
-            .encoded_result (unit_sel[i][NUM_UNITS[i] == 1 ? 0 : ($clog2(NUM_UNITS[i])-1) : 0])
+            .priority_vector (unit_done[i][NUM_WB_UNITS_PER_PORT[i]-1 : 0]),
+            .encoded_result (unit_sel[i][NUM_WB_UNITS_PER_PORT[i] == 1 ? 0 : ($clog2(NUM_WB_UNITS_PER_PORT[i])-1) : 0])
         );
         assign wb_packet[i].valid = |unit_done[i];
         assign wb_packet [i].id = unit_instruction_id[i][unit_sel[i]];

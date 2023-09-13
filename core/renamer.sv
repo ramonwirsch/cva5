@@ -65,7 +65,7 @@ module renamer
 
     logic rename_valid_gp;
     logic rename_valid_fp;
-    logic rollback;
+    logic rollback_prerequisite, rollback_any, rollback_gp, rollback_fp;
     ////////////////////////////////////////////////////
     //Implementation
     //Assumption: MAX_IDS <= 32 thus, decode/rename stage can never stall due to lacking a free register
@@ -76,7 +76,10 @@ module renamer
     assign rename_valid_fp = (~gc.fetch_flush) & decode_advance & decode.uses_rd_fp;
 
     //Revert physcial address assignment on a flush
-    assign rollback = gc.fetch_flush & issue.stage_valid & issue.uses_rd & |issue.rd_addr;
+    assign rollback_prerequisite = gc.fetch_flush && issue.stage_valid && issue.uses_rd;
+    assign rollback_any = rollback_prerequisite && |issue.rd_addr; // any rd_addr other than zero needs rollback, float addr have the isFloat bit in rd_addr set, so not 0
+    assign rollback_gp = rollback_prerequisite && !issue.rd_addr.isFloat && |issue.rd_addr.rs;
+    assign rollback_fp = rollback_prerequisite && issue.rd_addr.isFloat;
 
     //counter for indexing through memories for post-reset clearing/initialization
     lfsr #(.WIDTH(6), .NEEDS_RESET(0))
@@ -94,7 +97,7 @@ module renamer
         .clk (clk),
         .rst (rst),
         .fifo (free_list_gp),
-        .rollback (rollback && !lastUsedFromFpFreeQueue)
+        .rollback (rollback_gp)
     );
 
     //During post reset init, initialize FIFO with free list (registers 32-63)
@@ -110,7 +113,7 @@ module renamer
             .clk (clk),
             .rst (rst),
             .fifo (free_list_fp),
-            .rollback (rollback && lastUsedFromFpFreeQueue)
+            .rollback (rollback_fp)
         );
 
         assign free_list_fp.potential_push = (gc.init_clear && ~clear_index[5]) || (retire.valid && inuse_list_output.rd_addr.isFloat);
@@ -119,16 +122,6 @@ module renamer
         assign free_list_fp.data_in = gc.init_clear ? {1'b1, clear_index[4:0]} : (gc.writeback_supress ? inuse_list_output.spec_phys_addr : inuse_list_output.previous_phys_addr);
         assign free_list_fp.pop = rename_valid_fp;
 
-        always_ff @(posedge clk) begin
-            if (rst) 
-                lastUsedFromFpFreeQueue <= 0;
-            else if (rename_valid_gp)
-                lastUsedFromFpFreeQueue <= 0;
-            else if (rename_valid_fp)
-                lastUsedFromFpFreeQueue <= 1;
-        end
-    end else begin
-        assign lastUsedFromFpFreeQueue = 0;
     end endgenerate
 
     ////////////////////////////////////////////////////
@@ -164,7 +157,6 @@ module renamer
     rs_addr_t spec_table_fp_rs3_read_addr; // rs3 only goes to the fp file
     spec_table_t spec_table_fp_read_data [FP_RF_FIXED_READ_PORT_COUNT+1];
 
-    spec_table_t spec_table_gp_next, spec_table_fp_next;
     phys_addr_t spec_table_gp_phys_next_mux [4];
     phys_addr_t spec_table_gp_phys_next;
     logic [$clog2(RF_CONFIG.TOTAL_WB_GROUP_COUNT)-1:0] spec_tables_wb_group_next_mux [4];
@@ -176,15 +168,15 @@ module renamer
     rs_addr_t spec_tables_write_index;
     rs_addr_t spec_tables_write_index_mux [4];
 
-    logic spec_tables_can_update;
-    assign spec_tables_can_update = rollback | gc.init_clear | (retire.valid & gc.writeback_supress);
-    assign spec_table_gp_update = rename_valid_gp | spec_tables_can_update;
-    assign spec_table_fp_update = rename_valid_fp | spec_tables_can_update;
+    logic spec_tables_common_update;
+    assign spec_tables_common_update = gc.init_clear | (retire.valid & gc.writeback_supress); // these reasons are shared across GP and FP
+    assign spec_table_gp_update = rollback_gp || rename_valid_gp || spec_tables_common_update;
+    assign spec_table_fp_update = rollback_fp || rename_valid_fp || spec_tables_common_update;
 
     logic [1:0] spec_tables_sel;
     
     one_hot_to_integer #(.C_WIDTH(4)) spec_table_sel_one_hot_to_int (
-        .one_hot ({gc.init_clear, rollback, (retire.valid & gc.writeback_supress), 1'b0}),
+        .one_hot ({gc.init_clear, rollback_any, (retire.valid & gc.writeback_supress), 1'b0}),
         .int_out (spec_tables_sel)
     );
 
@@ -285,7 +277,7 @@ module renamer
     spec_table_t [RF_CONFIG.MAX_REGS_PER_ISSUE-1:0] spec_table_decode;
     generate for (genvar i = 0; i < RF_CONFIG.MAX_REGS_PER_ISSUE; i++) begin : gen_renamed_addrs
         if (i < GP_RF_FIXED_READ_PORT_COUNT) begin
-            if (CONFIG.INCLUDE_FPU_SINGLE && 0) begin
+            if (CONFIG.INCLUDE_FPU_SINGLE) begin
                 assign spec_table_decode[i] = (decode.rs_addr[i].isFloat)? spec_table_fp_read_data[i+1] : spec_table_gp_read_data[i+1];
             end else begin
                 assign spec_table_decode[i] = spec_table_gp_read_data[i+1];
@@ -306,7 +298,7 @@ module renamer
     ////////////////////////////////////////////////////
     //Assertions
     rename_rd_zero_assertion:
-        assert property (@(posedge clk) disable iff (rst) (decode.rd_addr == 0) |-> (decode.phys_rd_addr == 0)) else $error("rd zero renamed");
+        assert property (@(posedge clk) disable iff (rst) (decode.uses_rd_gp && decode.rd_addr == 0) |-> (decode.phys_rd_addr == 0)) else $error("rd zero renamed");
 
     for (genvar i = 0; i < RF_CONFIG.MAX_REGS_PER_ISSUE; i++) begin : rename_rs_zero_assertion
         assert property (@(posedge clk) disable iff (rst) (decode.rs_addr[i] == 0) |-> (decode.phys_rs_addr[i] == 0)) else $error("rs zero renamed");

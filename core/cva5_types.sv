@@ -41,6 +41,8 @@ package cva5_types;
         rs_addr_t rs;
     } rf_addr_t;
 
+    typedef logic [33:0] flopoco_t;
+
     typedef enum logic [1:0] {
         ALU_CONSTANT = 2'b00,
         ALU_ADD_SUB = 2'b01,
@@ -182,11 +184,11 @@ package cva5_types;
 
     typedef enum logic [2:0] { 
         ORG_A_SIGN = 3'b000,
-        ORG_B_SIGN = 3'b001,
+        ORG_B_SIGN = 3'b001, // not in combination with mul
         INV_A_SIGN = 3'b010,
-        INV_B_SIGN = 3'b011,
-        XOR_SIGNS = 3'b100
-    } sign_mod_t;
+        INV_B_SIGN = 3'b011,// not in combination with mul
+        XOR_SIGNS = 3'b100// not in combination with mul
+    } sign_mod_t; // only orgA & invA work on mul_result. Others bypass mul
 
     typedef struct packed { // -?((rs1(*rs2)?)|rs1) (+ -?(rs3|rs2))?
         logic mul; // rs1 * rs2. Result if none of the add-options is set
@@ -194,27 +196,35 @@ package cva5_types;
         logic add_rs1_rs2; // result rs1 + rs2
         sign_mod_t ovr_1st_add_in_sign; // changes sign bit of first add operand or result if none of the above result-modes is active
         logic negate_2nd_add_in; // flips sign bit of second add operand
-    } fpmac_op_t;
+    } fp_mac_op_t;
+
+    typedef struct packed {
+        flopoco_t rs1;
+        flopoco_t rs2;
+        flopoco_t rs3;
+        fp_mac_op_t op;
+    } fp_mac_inputs_t;
+
+    typedef struct packed {
+        flopoco_t rs1;
+        flopoco_t rs2;
+        logic sqrt;
+    } fp_div_sqrt_inputs_t;
 
     typedef enum logic [2:0] {
-        FPMAC_OP = 3'b000,
-        FPDIV_OP = 3'b001,
-        FPSQRT_OP = 3'b010,
-        FP_FROM_IEEE_OP = 3'b011,
-        FPCVT_FROM_I_OP = 3'b100,
-        FPCVT_FROM_U_OP = 3'b101,
-        FPMIN_OP = 3'b110,
-        FPMAX_OP = 3'b111
-    } fpu_op_t;
+        FP_FROM_IEEE_OP = 3'b001,
+        FPCVT_FROM_I_OP = 3'b010,
+        FPCVT_FROM_U_OP = 3'b011,
+        FPMIN_OP = 3'b100,
+        FPMAX_OP = 3'b101
+    } fp_short_op_t;
 
     typedef struct packed{
-        logic [FLEN_INTERNAL-1:0] rs1;
+        flopoco_t rs1;
         logic [XLEN-1:0] rs1_gp;
-        logic [FLEN_INTERNAL-1:0] rs2;
-        logic [FLEN_INTERNAL-1:0] rs3;
-        fpmac_op_t fpmac_op;
-        fpu_op_t op;
-    } fpu_inputs_t;
+        flopoco_t rs2;
+        fp_short_op_t op;
+    } fp_short_inputs_t;
 
     typedef enum logic [2:0] {
         FP_TO_IEEE_OP = 3'b000,
@@ -227,8 +237,8 @@ package cva5_types;
     } fp_to_gp_op_t;
 
     typedef struct packed{
-        logic [FLEN_INTERNAL-1:0] rs1;
-        logic [FLEN_INTERNAL-1:0] rs2;
+        flopoco_t rs1;
+        flopoco_t rs2;
         fp_to_gp_op_t op;
     } fp_to_gp_inputs_t;
 

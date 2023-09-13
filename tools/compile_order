@@ -89,11 +89,23 @@ fpu/flopoco/sv_impl/fp_rv_classify_sp.sv
 
 fpu/flopoco/sv_dpi_impl/f_compare_param_dpi.sv
 fpu/flopoco/sv_dpi_impl/f_compare_1cyc_dpi.sv
+fpu/flopoco/sv_dpi_impl/f_add_param_dpi.sv
+fpu/flopoco/sv_dpi_impl/f_add_2cyc_dpi.sv
+fpu/flopoco/sv_dpi_impl/f_mul_param_dpi.sv
+fpu/flopoco/sv_dpi_impl/f_mul_1cyc_dpi.sv
+fpu/flopoco/sv_dpi_impl/f_div_param_dpi.sv
+fpu/flopoco/sv_dpi_impl/f_div_8cyc_dpi.sv
+fpu/flopoco/sv_dpi_impl/f_sqrt_param_dpi.sv
+fpu/flopoco/sv_dpi_impl/f_sqrt_6cyc_dpi.sv
 fpu/flopoco/sv_dpi_impl/fp_to_fix_us_param_dpi.sv
 fpu/flopoco/sv_dpi_impl/fp_to_fix_us_1cyc_dpi.sv
+fpu/flopoco/sv_dpi_impl/fix_us_to_fp_param_dpi.sv
+fpu/flopoco/sv_dpi_impl/fix_us_to_fp_1cyc_dpi.sv
 
 fpu/fp_to_gp_unit_sp.sv
-fpu/fpu_unit_sp.sv
+fpu/fp_mac_unit_sp.sv
+fpu/fp_div_sqrt_unit_sp.sv
+fpu/fp_short_unit_sp.sv
 
 l2_arbiter/l2_reservation_logic.sv
 l2_arbiter/l2_round_robin.sv

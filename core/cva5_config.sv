@@ -295,10 +295,13 @@ package cva5_config;
         int unsigned CSR;
         int unsigned MUL;
         int unsigned DIV;
-        int unsigned BR;
-        int unsigned IEC;
-        int unsigned FPU;
         int unsigned FP_TO_GP;
+        int unsigned FP_MAC;
+        int unsigned FP_DIV;
+        int unsigned FP_SHORT;
+        int unsigned FP_FLW; // fake ID for LS with FL result
+        int unsigned BR; // must come last, because no result. UNIT_IDs and unit_wb count only match up when the first units have WB
+        int unsigned IEC;
     } unit_id_param_t;
 
     localparam unit_id_param_t EXAMPLE_UNIT_IDS = '{
@@ -307,10 +310,13 @@ package cva5_config;
         CSR : 2,
         MUL : 3,
         DIV : 4,
-        BR : 5,
-        IEC : 6,
-        FPU : 7,
-        FP_TO_GP : 8
+        FP_TO_GP : 5, // still has GP result
+        FP_MAC : 6, // FP results
+        FP_DIV : 7,
+        FP_SHORT : 8,
+        FP_FLW : 9, // special case. Comes from LS but 
+        BR : 10, // no result. Needs to be at the end
+        IEC : 11
     };
 
     ////////////////////////////////////////////////////
@@ -324,14 +330,14 @@ package cva5_config;
     localparam MAX_IDS = 8; //8 sufficient for rv32im configs
 
     localparam MAX_POSSIBLE_REG_BITS = 34;
-    localparam MAX_WB_GROUPS = 3;
+    localparam MAX_WB_GROUPS = 3; //min 2 (ALU & LS is required. ALU is 0-cycle only). Used to size fields in structs. Actually used bitwidth can be lower
 
     localparam INFLIGHT_REG_WRITES_RESERVE = 32; // what was previously hardcoded. Check if we can gain anything by reducing this
 
     ////////////////////////////////////////////////////
     //Number of commit ports
     localparam RETIRE_PORTS = 2; //min 1. (Non-powers of two supported) > 1 is recommended to allow stores to commit sooner
-    localparam REGFILE_READ_PORTS = 2; //min 2, for RS1 and RS2. (Non-powers of two supported)
+    
     typedef enum bit [1:0] {
         RS1 = 0,
         RS2 = 1,

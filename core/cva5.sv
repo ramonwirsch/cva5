@@ -66,35 +66,42 @@ module cva5
     localparam int unsigned CSR_UNIT_ID = LS_UNIT_ID + int'(CONFIG.INCLUDE_CSRS);
     localparam int unsigned MUL_UNIT_ID = CSR_UNIT_ID + int'(CONFIG.INCLUDE_MUL);
     localparam int unsigned DIV_UNIT_ID = MUL_UNIT_ID + int'(CONFIG.INCLUDE_DIV);
+    localparam int unsigned FP_TO_GP_UNIT_ID = DIV_UNIT_ID + int'(CONFIG.INCLUDE_FPU_SINGLE);
+    localparam int unsigned FP_MAC_UNIT_ID = FP_TO_GP_UNIT_ID + int'(CONFIG.INCLUDE_FPU_SINGLE);
+    localparam int unsigned FP_DIV_UNIT_ID = FP_MAC_UNIT_ID + int'(CONFIG.INCLUDE_FPU_SINGLE);
+    localparam int unsigned FP_SHORT_UNIT_ID = FP_DIV_UNIT_ID + int'(CONFIG.INCLUDE_FPU_SINGLE);
+    localparam int unsigned FP_FLW_UNIT_ID = FP_SHORT_UNIT_ID + int'(CONFIG.INCLUDE_FPU_SINGLE);
     //Non-writeback units
-    localparam int unsigned BRANCH_UNIT_ID = DIV_UNIT_ID + 1;
+    localparam int unsigned BRANCH_UNIT_ID = FP_SHORT_UNIT_ID + 1;
     localparam int unsigned IEC_UNIT_ID = BRANCH_UNIT_ID + 1;
-    localparam int unsigned FPU_UNIT_ID = IEC_UNIT_ID + int'(CONFIG.INCLUDE_FPU_SINGLE);
-    localparam int unsigned FP_TO_GP_UNIT_ID = FPU_UNIT_ID + int'(CONFIG.INCLUDE_FPU_SINGLE);
 
     //Total number of units
-    localparam int unsigned NUM_UNITS = FP_TO_GP_UNIT_ID + 1; 
+    localparam int unsigned NUM_UNITS = IEC_UNIT_ID + 1; 
 
     localparam unit_id_param_t UNIT_IDS = '{
         ALU : ALU_UNIT_ID,
-        LS : LS_UNIT_ID,
+        LS : LS_UNIT_ID, // TODO: special case FP & GP results
         CSR : CSR_UNIT_ID,
         MUL : MUL_UNIT_ID,
         DIV : DIV_UNIT_ID,
+        FP_TO_GP : FP_TO_GP_UNIT_ID,
+        // FP results from here
+        FP_MAC : FP_MAC_UNIT_ID,
+        FP_DIV : FP_DIV_UNIT_ID,
+        FP_SHORT : FP_SHORT_UNIT_ID,
+        FP_FLW : FP_FLW_UNIT_ID,
+        // No results from here
         BR : BRANCH_UNIT_ID,
-        IEC : IEC_UNIT_ID,
-        FPU : FPU_UNIT_ID,
-        FP_TO_GP : FP_TO_GP_UNIT_ID 
+        IEC : IEC_UNIT_ID
     };
 
     ////////////////////////////////////////////////////
     //Writeback Port Assignment
     //
     localparam int unsigned NUM_WB_UNITS_GROUP_1 = 1;//ALU
-    localparam int unsigned NUM_WB_UNITS_GROUP_2 = 1 + int'(CONFIG.INCLUDE_CSRS) + int'(CONFIG.INCLUDE_MUL) + int'(CONFIG.INCLUDE_DIV);//LS
+    localparam int unsigned NUM_WB_UNITS_GROUP_2 = 1 + int'(CONFIG.INCLUDE_CSRS) + int'(CONFIG.INCLUDE_MUL) + int'(CONFIG.INCLUDE_DIV) + int'(CONFIG.INCLUDE_FPU_SINGLE);//LS
+    localparam int unsigned NUM_WB_UNITS_FP = int'(CONFIG.INCLUDE_FPU_SINGLE) * 4; // 3 FPU pipes with FP results + FLW from loadStore
     localparam int unsigned NUM_WB_UNITS_GP = NUM_WB_UNITS_GROUP_1 + NUM_WB_UNITS_GROUP_2;
-    localparam int unsigned NUM_WB_UNITS_FP = int'(CONFIG.INCLUDE_FPU_SINGLE) * 3;
-    localparam int unsigned NUM_WB_UNITS_FP_MIN_1 = NUM_WB_UNITS_FP < 1? 1 : NUM_WB_UNITS_FP;
     localparam int unsigned NUM_WB_UNITS = NUM_WB_UNITS_GP + NUM_WB_UNITS_FP;
 
     localparam int unsigned NUM_INSTR_INV_TARGETS = ((CONFIG.INSTRUCTION_COHERENCY)? (int'(CONFIG.INCLUDE_ICACHE) + int'(CONFIG.INCLUDE_BRANCH_PREDICTOR) + EXTERNAL_INSTR_INV_TARGETS) : (0));
@@ -139,7 +146,9 @@ module cva5
     branch_inputs_t branch_inputs;
     mul_inputs_t mul_inputs;
     div_inputs_t div_inputs;
-    fpu_inputs_t fpu_inputs;
+    fp_mac_inputs_t fp_mac_inputs;
+    fp_div_sqrt_inputs_t fp_div_inputs;
+    fp_short_inputs_t fp_short_inputs;
     fp_to_gp_inputs_t fp_to_gp_inputs;
     gc_inputs_t gc_inputs;
     csr_inputs_t csr_inputs;
@@ -461,7 +470,9 @@ module cva5
         .csr_inputs (csr_inputs),
         .mul_inputs (mul_inputs),
         .div_inputs (div_inputs),
-        .fpu_inputs (fpu_inputs),
+        .fp_mac_inputs (fp_mac_inputs),
+        .fp_div_inputs (fp_div_inputs),
+        .fp_short_inputs (fp_short_inputs),
         .fp_to_gp_inputs (fp_to_gp_inputs),
         .unit_issue (unit_issue),
         .gc (gc),
@@ -495,7 +506,8 @@ module cva5
         .WRITE_PORTS(RF_CONFIG.GP_WB_GROUP_COUNT),
         .READ_PORTS(RF_CONFIG.GP_READ_PORT_COUNT),
         .DEPTH(64),
-        .DATA_WIDTH(32)
+        .DATA_WIDTH(32),
+        .SELF_FLUSH(0) // means we will externally wire up commit port 0 to flush, because conveniently it will already have the addr that needs flushing we will only force the valid bit
     ) regfile_gp (
         .clk (clk),
         .rst (rst),
@@ -504,14 +516,14 @@ module cva5
         .decode_phys_rd_addr (decode_phys_rd_addr),
         .decode_rs_wb_group ('{ decode_rs_wb_group[RS1][0], decode_rs_wb_group[RS2][0]}),
         .decode_advance (decode_advance),
-        .decode_uses_rd (decode_uses_rd_gp),
+        .decode_uses_rd (decode_uses_rd_gp && |decode_phys_rd_addr), // written to and not zero
 
         .inflight_commit_addr_per_port ('{
-            gp_rf_issue.phys_rd_addr, 
+            gp_rf_issue.phys_rd_addr, // since wb is combinatorial, commit addr would always be invalid or phys_rd_addr. But phys_rd_addr is also the addr that needs flushing and can never overlap
             commit_packet[1].phys_addr
         }),
         .inflight_commit_per_port ('{
-            gp_rf_issue.single_cycle_or_flush, // TODO is this actually equivalent to commit[0].valid? looks that way, but I cannot prove it, might be to shorten this specific path
+            gp_rf_issue.single_cycle_or_flush, // true when commit[0].valid || flushing neeed (killing an inflight reg after we mistakenly marked it as inflight before the flush)
             commit_packet[1].valid
         }),
 
@@ -524,8 +536,9 @@ module cva5
             .WRITE_PORTS(RF_CONFIG.FP_WB_GROUP_COUNT),
             .READ_PORTS(RF_CONFIG.FP_READ_PORT_COUNT),
             .DEPTH(64),
-            .DATA_WIDTH(34)
-            ) regfile_fp (
+            .DATA_WIDTH(34),
+            .SELF_FLUSH(1) // the RF will internally mux a toggle port to kill inflight regs with flushes. Otherwise would require 1 more toggle write port just for flushing
+        ) regfile_fp (
             .clk (clk),
             .rst (rst),
             .gc (gc),
@@ -543,7 +556,7 @@ module cva5
             }),
 
             .rf_issue (fp_rf_issue),
-            .commit (commit_packet[2:2])
+            .commit ('{commit_packet[2]})
         );
     end endgenerate
 
@@ -763,21 +776,46 @@ module cva5
         fp_to_gp_unit_sp fp_to_gp_unit (
             .clk(clk),
             .rst(rst),
-            .inputs (fp_to_gp_inputs),
-            .issue (unit_issue[UNIT_IDS.FP_TO_GP]),
-            .wb (unit_wb[UNIT_IDS.FP_TO_GP])
+            .inputs(fp_to_gp_inputs),
+            .issue(unit_issue[UNIT_IDS.FP_TO_GP]),
+            .wb(unit_wb[UNIT_IDS.FP_TO_GP])
+        );
+
+        fp_mac_unit_sp fp_mac_unit (
+            .clk(clk),
+            .rst(rst),
+            .inputs(fp_mac_inputs),
+            .issue(unit_issue[UNIT_IDS.FP_MAC]),
+            .wb(unit_wb[UNIT_IDS.FP_MAC])
+        );
+
+        fp_div_sqrt_unit_sp fp_div_unit (
+            .clk(clk),
+            .rst(rst),
+            .inputs(fp_div_inputs),
+            .issue(unit_issue[UNIT_IDS.FP_DIV]),
+            .wb(unit_wb[UNIT_IDS.FP_DIV])
+        );
+
+        fp_short_unit_sp fp_short_unit (
+            .clk(clk),
+            .rst(rst),
+            .inputs(fp_short_inputs),
+            .issue(unit_issue[UNIT_IDS.FP_SHORT]),
+            .wb(unit_wb[UNIT_IDS.FP_SHORT])
         );
     end endgenerate
 
     ////////////////////////////////////////////////////
     //Writeback
     //First writeback port: ALU
-    //Second writeback port: LS, CSR, [MUL], [DIV]
-    localparam int unsigned NUM_UNITS_PER_PORT [MAX_WB_GROUPS] = '{NUM_WB_UNITS_GROUP_1, NUM_WB_UNITS_GROUP_2, NUM_WB_UNITS_FP};
+    //Second writeback port: LS, CSR, [MUL], [DIV], [FP_TP_GP]
+    //Third write port: [FP_MAC], [FP_DIV], [FP_SHORT], [FP_FLW]
+    localparam int unsigned NUM_WB_UNITS_PER_PORT [MAX_WB_GROUPS] = '{NUM_WB_UNITS_GROUP_1, NUM_WB_UNITS_GROUP_2, NUM_WB_UNITS_FP};
     writeback #(
         .CONFIG (CONFIG),
         .RF_CONFIG(RF_CONFIG),
-        .NUM_UNITS (NUM_UNITS_PER_PORT),
+        .NUM_WB_UNITS_PER_PORT (NUM_WB_UNITS_PER_PORT),
         .NUM_WB_UNITS (NUM_WB_UNITS)
     )
     writeback_block (

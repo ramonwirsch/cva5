@@ -32,9 +32,10 @@ module register_file
         parameter WRITE_PORTS = 2,
         parameter READ_PORTS = 2,
         parameter DATA_WIDTH = 32,
-        parameter DEPTH = 64
-    )
-
+        parameter DEPTH = 64,
+        parameter SELF_FLUSH = 0 // GP_RF flushed on write_port 1, which is ALU. Because the rf_issue.phys_rd addr is always the one to flush & the one for alu-single-issue writebacks
+    ) // FP_RF cannot do that, because there is no single-issue write-port. Need to multiplex flushing on write_port 0 (because flushing procludes marking new reg as inflight, but fpu writebacks might still occur)
+    // "rf_issue.single_cycle_or_flush" just means flush in that case
     (
         input logic clk,
         input logic rst,
@@ -78,8 +79,13 @@ module register_file
     phys_addr_t inflight_check_addr [READ_PORTS*2];
     logic inflight_check_result [READ_PORTS*2];
 
-    assign inflight_notify[0] = (decode_advance & decode_uses_rd & |decode_phys_rd_addr & ~gc.fetch_flush);
-    assign inflight_notify_addr[0] = decode_phys_rd_addr;
+    generate if (SELF_FLUSH) begin : gen_self_flush
+        assign inflight_notify[0] = (decode_advance && decode_uses_rd && ~gc.fetch_flush) || rf_issue.single_cycle_or_flush;
+        assign inflight_notify_addr[0] = rf_issue.single_cycle_or_flush? rf_issue.phys_rd_addr : decode_phys_rd_addr;
+    end else begin
+        assign inflight_notify[0] = (decode_advance & decode_uses_rd & ~gc.fetch_flush);
+        assign inflight_notify_addr[0] = decode_phys_rd_addr;
+    end endgenerate
 
     generate for (i = 0; i < READ_PORTS; i++) begin : gen_in_flight_vectors
         assign inflight_check_addr[i] = decode_phys_rs_addr[i];
@@ -124,7 +130,8 @@ module register_file
             .DATA_WIDTH(DATA_WIDTH),
             .DEPTH(DEPTH)
         ) reg_group (
-            .clk, .rst,
+            .clk(clk),
+            .rst(rst),
             .write_addr(commit[i].phys_addr),
             .new_data(commit[i].data[DATA_WIDTH-1:0]),
             .commit(commit[i].valid & ~gc.writeback_supress),
