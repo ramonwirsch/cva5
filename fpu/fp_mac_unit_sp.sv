@@ -130,7 +130,7 @@ module fp_mac_unit_sp
             add_takes_mul = 1;
         end else begin
             addMode_mulResult = 0;
-            start_add_in = valid_input; // we need add_advance also for logic only. So does not matter whether op instructs to actually add or not
+            start_add_in = valid_input && !input_buf.op.mul; // we need add_advance also for logic only. So does not matter whether op instructs to actually add or not
             add_takes_mul = 0;
         end
     end

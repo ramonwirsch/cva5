@@ -27,7 +27,8 @@ module store_queue
     import cva5_types::*;
 
     # (
-        parameter cpu_config_t CONFIG = EXAMPLE_CONFIG
+        parameter cpu_config_t CONFIG = EXAMPLE_CONFIG,
+        parameter rf_params_t RF_CONFIG = get_derived_rf_params(CONFIG)
     )
     ( 
         input logic clk,
@@ -46,7 +47,7 @@ module store_queue
         output logic store_conflict,
 
         //Writeback snooping
-        input wb_packet_t wb_snoop,
+        input wb_packet_t wb_snoop [RF_CONFIG.TOTAL_WB_GROUP_COUNT-1], // port0 ignored, writes immediately
 
         //Retire
         input id_t retire_ids [RETIRE_PORTS],
@@ -54,10 +55,11 @@ module store_queue
     );
 
     localparam LOG2_SQ_DEPTH = $clog2(CONFIG.SQ_DEPTH);
+    localparam SNOOP_PORTS = RF_CONFIG.TOTAL_WB_GROUP_COUNT-1;
     typedef logic [LOG2_MAX_IDS:0] load_check_count_t;
 
 
-    wb_packet_t wb_snoop_r;
+    wb_packet_t wb_snoop_r [SNOOP_PORTS];
 
     //Register-based memory blocks
     logic [CONFIG.SQ_DEPTH-1:0] valid;
@@ -67,6 +69,7 @@ module store_queue
     id_t [CONFIG.SQ_DEPTH-1:0] id_needed;
     load_check_count_t [CONFIG.SQ_DEPTH-1:0] load_check_count;
     logic [31:0] store_data_from_wb [CONFIG.SQ_DEPTH];
+    logic [31:0] sq_in_data_processed;
 
     //LUTRAM-based memory blocks
     sq_entry_t sq_entry_in;
@@ -124,12 +127,13 @@ module store_queue
     end
 
     //SQ attributes and issue data
-    assign sq_entry_in = '{
+    assign sq_entry_in = '{ // TODO: if we need 1 cycle for converting FP->IEEE, then override FP-stores as forwarded-stores and convert there (already reg (wb_packet_r) -> reg(forwarded_data))
         addr : sq.data_in.addr,
         be : sq.data_in.be,
         fn3 : sq.data_in.fn3,
+        is_float : sq.data_in.is_float,
         forwarded_store : sq.data_in.forwarded_store,
-        data : sq.data_in.data
+        data : sq_in_data_processed
     };
     always_ff @ (posedge clk) begin
         if (sq.push)
@@ -210,13 +214,58 @@ module store_queue
     ////////////////////////////////////////////////////
     //Forwarded Store Data
     always_ff @ (posedge clk) begin
-        wb_snoop_r <= wb_snoop;
+        for (int i=0; i < SNOOP_PORTS; i++)
+            wb_snoop_r[i] <= wb_snoop[i];
     end
+
+    logic [31:0] wb_snooped_data [SNOOP_PORTS];
+
+    genvar g;
+
+    generate if (CONFIG.INCLUDE_FPU_SINGLE) begin : gen_fp_conversion
+
+        //////////// Data input into SQ
+
+        logic [31:0] sq_in_data_fp_conv;
+
+        flopoco_to_ieee_sp direct_to_ieee (
+            .clk(clk),
+            .X(sq.data_in.data),
+            .R(sq_in_data_fp_conv)
+        );
+
+        assign sq_in_data_processed = (sq.data_in.is_float)? sq_in_data_fp_conv : sq.data_in.data[31:0];
+
+        /////////// forwarding / snooping of FP values
+        logic [31:0] wb_snooped_fp_conv;
+
+        flopoco_to_ieee_sp snoop_to_ieee (
+            .clk(clk),
+            .X(wb_snoop_r[RF_CONFIG.FP_WB_PORT].data),
+            .R(wb_snooped_fp_conv)
+        );
+
+        for (g = 0; g < SNOOP_PORTS; g++)
+            if (g == RF_CONFIG.FP_WB_PORT-1) // offset, port0 missing
+                assign wb_snooped_data[g] = wb_snooped_fp_conv;
+            else
+                assign wb_snooped_data[g] =  wb_snoop_r[g].data[31:0];
+
+    end else begin
+        assign sq_in_data_processed = sq.data_in.data;
+
+        for (g = 0; g < SNOOP_PORTS; g++)
+            assign wb_snooped_data[g] =  wb_snoop_r[g].data[31:0];
+    end endgenerate
 
     always_ff @ (posedge clk) begin
         for (int i = 0; i < CONFIG.SQ_DEPTH; i++) begin
-            if ({1'b0, wb_snoop_r.valid, wb_snoop_r.id} == {released[i], 1'b1, id_needed[i]})
-                store_data_from_wb[i] <= wb_snoop_r.data;
+            if (!released[i]) begin
+                for (int j = 0; j < SNOOP_PORTS; j++) begin
+                    if (wb_snoop_r[j].valid && wb_snoop_r[j].id == id_needed[j]) //TODO maybe store on which snoop port we expect the ID? just depends on FP bit
+                        store_data_from_wb[i] <= wb_snooped_data[j];
+                end
+            end        
         end
     end
     
@@ -248,6 +297,7 @@ module store_queue
         addr : output_entry.addr,
         be : output_entry.be,
         fn3 : output_entry.fn3,
+        is_float : output_entry.is_float,
         forwarded_store : output_entry.forwarded_store,
         data : sq_data
     };

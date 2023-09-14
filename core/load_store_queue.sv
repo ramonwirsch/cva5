@@ -27,7 +27,8 @@ module load_store_queue //ID-based input buffer for Load/Store Unit
     import cva5_types::*;
 
     # (
-        parameter cpu_config_t CONFIG = EXAMPLE_CONFIG
+        parameter cpu_config_t CONFIG = EXAMPLE_CONFIG,
+        parameter rf_params_t RF_CONFIG = get_derived_rf_params(CONFIG)
     )
     (
         input logic clk,
@@ -36,7 +37,7 @@ module load_store_queue //ID-based input buffer for Load/Store Unit
 
         load_store_queue_interface.queue lsq,
         //Writeback snooping
-        input wb_packet_t wb_snoop,
+        input wb_packet_t wb_snoop [RF_CONFIG.TOTAL_WB_GROUP_COUNT-1], // port0 ignored, writes immediately
 
         //Retire release
         input id_t retire_ids [RETIRE_PORTS],
@@ -48,6 +49,7 @@ module load_store_queue //ID-based input buffer for Load/Store Unit
     typedef struct packed {
         logic [31:0] addr;
         logic [2:0] fn3;
+        logic is_float;
         id_t id;
         logic [CONFIG.SQ_DEPTH-1:0] potential_store_conflicts;
     } lq_entry_t;
@@ -95,6 +97,7 @@ module load_store_queue //ID-based input buffer for Load/Store Unit
     assign lq_data_in = '{
         addr : lsq.data_in.addr,
         fn3 : lsq.data_in.fn3,
+        is_float : lsq.data_in.is_float,
         id : lsq.data_in.id, 
         potential_store_conflicts : potential_store_conflicts
     };
@@ -106,7 +109,10 @@ module load_store_queue //ID-based input buffer for Load/Store Unit
     assign sq.pop = lsq.pop & ~load_selected;
     assign sq.data_in = lsq.data_in;
 
-    store_queue  # (.CONFIG(CONFIG)) sq_block (
+    store_queue  # (
+        .CONFIG(CONFIG),
+        .RF_CONFIG(RF_CONFIG)
+    ) sq_block (
         .clk (clk),
         .rst (rst | gc.sq_flush),
         .lq_push (lq.push),
@@ -134,6 +140,7 @@ module load_store_queue //ID-based input buffer for Load/Store Unit
         store : ~load_selected,
         be : load_selected ? '0 : sq.data_out.be,
         fn3 : load_selected ? lq_data_out.fn3 : sq.data_out.fn3,
+        is_float : load_selected ? lq_data_out.is_float : sq.data_out.is_float,
         data_in : sq.data_out.data,
         id : lq_data_out.id
     };

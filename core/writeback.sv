@@ -29,7 +29,7 @@ module writeback
     # (
         parameter cpu_config_t CONFIG = EXAMPLE_CONFIG,
         parameter rf_params_t RF_CONFIG = get_derived_rf_params(CONFIG),
-        parameter int unsigned NUM_WB_UNITS_PER_PORT [MAX_WB_GROUPS] = '{1, 4, 3},
+        parameter int unsigned NUM_WB_UNITS_PER_PORT [MAX_WB_GROUPS] = '{1, 4, 4},
         parameter int unsigned NUM_WB_UNITS = 9
     )
 
@@ -41,7 +41,7 @@ module writeback
         //WB output
         output wb_packet_t wb_packet [RF_CONFIG.TOTAL_WB_GROUP_COUNT],
         //Snoop interface (LS unit)
-        output wb_packet_t wb_snoop
+        output wb_packet_t wb_snoop [RF_CONFIG.TOTAL_WB_GROUP_COUNT-1] // port0 writes immediately
     );
 
     //Writeback
@@ -121,13 +121,17 @@ module writeback
     //operation
     always_ff @ (posedge clk) begin
         if (rst)
-            wb_snoop.valid <= 0;
+            for (int i=1; i < RF_CONFIG.TOTAL_WB_GROUP_COUNT; i++)
+                wb_snoop[i-1].valid <= 0;
         else
-            wb_snoop.valid <= wb_packet[1].valid;
+            for (int i=1; i < RF_CONFIG.TOTAL_WB_GROUP_COUNT; i++)
+                wb_snoop[i-1].valid <= wb_packet[i].valid;
     end
     always_ff @ (posedge clk) begin
-        wb_snoop.data <= wb_packet[1].data; //TODO may need to be extended to commit-port 3 (fp) with 34b to forward float results to fsw too
-        wb_snoop.id <= wb_packet[1].id;
+        for (int i=1; i < RF_CONFIG.TOTAL_WB_GROUP_COUNT; i++) begin
+            wb_snoop[i-1].data <= wb_packet[i].data; //TODO may need to be extended to commit-port 3 (fp) with 34b to forward float results to fsw too
+            wb_snoop[i-1].id <= wb_packet[i].id;
+        end
     end
 
     ////////////////////////////////////////////////////

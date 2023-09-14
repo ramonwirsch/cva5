@@ -399,6 +399,8 @@ module decode_and_issue
     //Load Store unit inputs
     logic is_load;
     logic is_store;
+    logic is_float_load;
+    logic is_float_store;
     logic amo_op;
     logic store_conditional;
     logic load_reserve;
@@ -408,6 +410,9 @@ module decode_and_issue
     assign amo_type = decode.instruction[31:27];
     assign store_conditional = (amo_type == AMO_SC_FN5);
     assign load_reserve = (amo_type == AMO_LR_FN5);
+    assign is_float_load = CONFIG.INCLUDE_FPU_SINGLE && opcode_trim inside {FLW_T};
+    assign is_float_store = CONFIG.INCLUDE_FPU_SINGLE && opcode_trim inside {FSW_T};
+
 
     generate if (CONFIG.INCLUDE_AMO) begin : gen_decode_ls_amo
             assign ls_inputs.amo.is_lr = load_reserve;
@@ -420,19 +425,21 @@ module decode_and_issue
         end
     endgenerate
 
-    assign is_load = (opcode_trim inside {LOAD_T, AMO_T}) && !(amo_op & store_conditional); //LR and AMO_ops perform a read operation as well
-    assign is_store = (opcode_trim == STORE_T) || (amo_op && store_conditional);//Used for LS unit and for ID tracking
+    assign is_load = ((opcode_trim inside {LOAD_T, AMO_T}) && !(amo_op & store_conditional)) || is_float_load; //LR and AMO_ops perform a read operation as well
+    assign is_store = (opcode_trim inside {STORE_T}) || (amo_op && store_conditional) || is_float_store;//Used for LS unit and for ID tracking
 
     logic [11:0] ls_offset;
     logic is_load_r;
     logic is_store_r;
     logic is_fence_r;
+    logic is_float_r;
     always_ff @(posedge clk) begin
         if (issue_stage_ready) begin
             ls_offset <= opcode[5] ? {decode.instruction[31:25], decode.instruction[11:7]} : decode.instruction[31:20];
             is_load_r <= is_load;
             is_store_r <= is_store;
             is_fence_r <= is_fence;
+            is_float_r <= is_float_load || is_float_store;
         end
     end
 
@@ -449,10 +456,11 @@ module decode_and_issue
     assign ls_inputs.store = is_store_r;
     assign ls_inputs.fence = is_fence_r;
     assign ls_inputs.fn3 = amo_op ? LS_W_fn3 : issue.fn3;
-    assign ls_inputs.rs1 = gp_rf.data[RSG1];
-    assign ls_inputs.rs2 = gp_rf.data[RSG2];
-    assign ls_inputs.forwarded_store = gp_rf.inuse[RSG2];
-    assign ls_inputs.store_forward_id = rd_to_id_table[issue_rs_addr[RS2][RELEVANT_RD_BITS-1:0]];
+    assign ls_inputs.rs1 = gp_rf.data[RSG1]; // addr
+    assign ls_inputs.rs2 = is_float_r? fp_rf.data[RS2] : {2'b00, gp_rf.data[RSG2]}; // data if store
+    assign ls_inputs.is_float = is_float_r;
+    assign ls_inputs.forwarded_store = (is_float_r && is_store_r)? fp_rf.inuse[RS2] : gp_rf.inuse[RSG2];
+    assign ls_inputs.store_forward_id = rd_to_id_table[issue_rs_addr[RS2][RELEVANT_RD_BITS-1:0]]; // RS-bits in insn are identical for GP & FP
 
     ////////////////////////////////////////////////////
     //Branch unit inputs

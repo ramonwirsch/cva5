@@ -159,6 +159,7 @@ package cva5_config;
         int unsigned TOTAL_WB_GROUP_COUNT;
         int unsigned GP_WB_GROUP_COUNT;
         int unsigned FP_WB_GROUP_COUNT;
+        int unsigned FP_WB_PORT;
         int unsigned TOTAL_READ_PORT_COUNT;
         int unsigned GP_READ_PORT_COUNT;
         int unsigned FP_READ_PORT_COUNT;
@@ -170,12 +171,14 @@ package cva5_config;
     localparam int unsigned GP_RF_FIXED_WRITE_PORT_COUNT = 2;
     localparam int unsigned FP_RF_FIXED_READ_PORT_COUNT = 3;
     localparam int unsigned FP_RF_FIXED_WRITE_PORT_COUNT = 1;
+    localparam int unsigned FP_WB_FIXED_PORT = 2;
 
     function rf_params_t get_derived_rf_params (input cpu_config_t cpu);
         return '{
             TOTAL_WB_GROUP_COUNT : GP_RF_FIXED_WRITE_PORT_COUNT + (cpu.INCLUDE_FPU_SINGLE? FP_RF_FIXED_WRITE_PORT_COUNT : 0),
             GP_WB_GROUP_COUNT : GP_RF_FIXED_WRITE_PORT_COUNT,
             FP_WB_GROUP_COUNT : (cpu.INCLUDE_FPU_SINGLE? FP_RF_FIXED_WRITE_PORT_COUNT : 0),
+            FP_WB_PORT : FP_WB_FIXED_PORT,
             TOTAL_READ_PORT_COUNT : GP_RF_FIXED_READ_PORT_COUNT + FP_RF_FIXED_READ_PORT_COUNT,
             GP_READ_PORT_COUNT : GP_RF_FIXED_READ_PORT_COUNT,
             FP_READ_PORT_COUNT : (cpu.INCLUDE_FPU_SINGLE? FP_RF_FIXED_READ_PORT_COUNT : 0),

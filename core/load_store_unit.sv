@@ -27,7 +27,8 @@ module load_store_unit
     import cva5_types::*;
 
     # (
-        parameter cpu_config_t CONFIG = EXAMPLE_CONFIG
+        parameter cpu_config_t CONFIG = EXAMPLE_CONFIG,
+        parameter rf_params_t RF_CONFIG = get_derived_rf_params(CONFIG)
     )
 
     (
@@ -55,7 +56,7 @@ module load_store_unit
         local_memory_interface.master data_bram,
 
         //Writeback-Store Interface
-        input wb_packet_t wb_snoop,
+        input wb_packet_t wb_snoop [RF_CONFIG.TOTAL_WB_GROUP_COUNT-1], // port0 ignored, writes immediately
 
         //Retire release
         input id_t retire_ids [RETIRE_PORTS],
@@ -64,6 +65,7 @@ module load_store_unit
         exception_interface.unit exception,
         output load_store_status_t load_store_status,
         unit_writeback_interface.unit wb,
+        unit_writeback_interface.unit wb_fp,
 
 		// Trace
         output logic tr_load_conflict_delay,
@@ -110,12 +112,14 @@ module load_store_unit
 
     logic sub_unit_issue;
     logic load_complete;
+    logic float_load_complete;
 
     logic [31:0] virtual_address;
 
     logic [31:0] unit_muxed_load_data;
     logic [31:0] aligned_load_data;
     logic [31:0] final_load_data;
+    logic [FLEN_INTERNAL-1:0] final_float_load_data;
 
 
     logic unaligned_addr;
@@ -128,6 +132,7 @@ module load_store_unit
         logic [1:0] byte_addr;
         logic [1:0] final_mux_sel;
         id_t id;
+        logic is_float;
         logic [NUM_SUB_UNITS_W-1:0] subunit_id;
     } load_attributes_t;
     load_attributes_t  mem_attr, wb_attr;
@@ -224,6 +229,7 @@ module load_store_unit
         data : ls_inputs.rs2,
         load : ls_inputs.load,
         store : ls_inputs.store,
+        is_float : ls_inputs.is_float,
         id : issue.id,
         forwarded_store : ls_inputs.forwarded_store,
         id_needed : ls_inputs.store_forward_id
@@ -232,7 +238,10 @@ module load_store_unit
     assign lsq.potential_push = issue.possible_issue;
     assign lsq.push = issue.new_request & ~unaligned_addr & (~tlb_on | tlb.done) & ~ls_inputs.fence;
 
-    load_store_queue  # (.CONFIG(CONFIG)) lsq_block (
+    load_store_queue  # (
+        .CONFIG(CONFIG),
+        .RF_CONFIG(RF_CONFIG)
+    ) lsq_block (
         .clk (clk),
         .rst (rst),
         .gc (gc),
@@ -265,7 +274,7 @@ module load_store_unit
     ////////////////////////////////////////////////////
     //Primary Control Signals
     assign units_ready = &unit_ready & (~unit_switch_hold) & (~instr_inv_stall);
-    assign load_complete = |unit_data_valid;
+    assign load_complete = (CONFIG.INCLUDE_FPU_SINGLE && !wb_attr.is_float) && |unit_data_valid;
 
     assign issue.ready = (~tlb_on | tlb.ready) & (~lsq.full) & (~fence_hold) & (~exception.valid);
     assign sub_unit_issue = lsq.valid & units_ready;
@@ -299,6 +308,7 @@ module load_store_unit
     assign mem_attr = '{
         is_halfword : shared_inputs.fn3[0],
         is_signed : ~|shared_inputs.fn3[2:1],
+        is_float : shared_inputs.is_float,
         byte_addr : shared_inputs.addr[1:0],
         final_mux_sel : final_mux_sel,
         id : shared_inputs.id,
@@ -316,7 +326,7 @@ module load_store_unit
         .fifo (load_attributes)
     );
 
-    assign load_attributes.pop = load_complete;
+    assign load_attributes.pop = load_complete || float_load_complete;
     assign wb_attr = load_attributes.data_out;
     ////////////////////////////////////////////////////
     //Unit Instantiation
@@ -434,11 +444,30 @@ module load_store_unit
         endcase
     end
 
+    generate if (CONFIG.INCLUDE_FPU_SINGLE) begin : gen_to_fp_conversion
+
+        ieee_to_flopoco_sp to_flopoco (
+            .clk(clk),
+            .X(unit_muxed_load_data),
+            .R(final_float_load_data)
+        );
+
+        assign float_load_complete = (CONFIG.INCLUDE_FPU_SINGLE && wb_attr.is_float) && |unit_data_valid; // delay complete here if conversion requires an additional cycle
+    end else begin
+
+        assign final_float_load_data = 0;
+
+    end endgenerate
+
     ////////////////////////////////////////////////////
     //Output bank
-    assign wb.rd[31:0] = final_load_data; //TODO until we support FLW
-    assign wb.done = load_complete | load_exception_complete;
+    assign wb.rd[31:0] = final_load_data;
+    assign wb.done = load_complete || (load_exception_complete && !wb_attr.is_float);
     assign wb.id = load_exception_complete ? exception.id : wb_attr.id;
+
+    assign wb_fp.rd = final_float_load_data;
+    assign wb_fp.done = float_load_complete || (load_exception_complete && wb_attr.is_float);
+    assign wb_fp.id = load_exception_complete ? exception.id : wb_attr.id;
 
     ////////////////////////////////////////////////////
     //End of Implementation
