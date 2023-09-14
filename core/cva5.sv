@@ -72,7 +72,7 @@ module cva5
     localparam int unsigned FP_SHORT_UNIT_ID = FP_DIV_UNIT_ID + int'(CONFIG.INCLUDE_FPU_SINGLE);
     localparam int unsigned FP_FLW_UNIT_ID = FP_SHORT_UNIT_ID + int'(CONFIG.INCLUDE_FPU_SINGLE);
     //Non-writeback units
-    localparam int unsigned BRANCH_UNIT_ID = FP_SHORT_UNIT_ID + 1;
+    localparam int unsigned BRANCH_UNIT_ID = FP_FLW_UNIT_ID + 1;
     localparam int unsigned IEC_UNIT_ID = BRANCH_UNIT_ID + 1;
 
     //Total number of units
@@ -231,7 +231,7 @@ module cva5
     logic instruction_issued_with_rd;
 
     //LS
-    wb_packet_t wb_snoop;
+    wb_packet_t wb_snoop [RF_CONFIG.TOTAL_WB_GROUP_COUNT-1]; // port0 not needed
 
     // Instr. Invalidation
     instruction_invalidation_interface instr_inv ();
@@ -631,8 +631,14 @@ module cva5
     end
     endgenerate
 
-    load_store_unit #(.CONFIG(CONFIG))
-    load_store_unit_block (
+    unit_writeback_interface #(
+        .RESULT_WIDTH(MAX_POSSIBLE_REG_BITS)
+    ) ls_unit_fp_wb ();    
+
+    load_store_unit #(
+        .CONFIG(CONFIG),
+        .RF_CONFIG(RF_CONFIG)
+    ) load_store_unit_block (
         .clk (clk),
         .rst (rst),
         .gc (gc),
@@ -656,12 +662,20 @@ module cva5
         .exception (exception[LS_EXCEPTION]),
         .load_store_status(load_store_status),
         .wb (unit_wb[UNIT_IDS.LS]),
+        .wb_fp (ls_unit_fp_wb),
         .tr_load_conflict_delay (tr_load_conflict_delay),
         .tr_ls_is_peri_access(tr_ls_is_peri_access),
         .instr_inv(instr_inv),
         .instr_inv_en(instr_inv_enabled),
         .instr_inv_stall(instr_inv_stall)
     );
+
+    generate if (CONFIG.INCLUDE_FPU_SINGLE) begin : gen_load_fp
+        assign unit_wb[UNIT_IDS.FP_FLW].rd = ls_unit_fp_wb.rd;
+        assign unit_wb[UNIT_IDS.FP_FLW].id = ls_unit_fp_wb.id;
+        assign unit_wb[UNIT_IDS.FP_FLW].done = ls_unit_fp_wb.done;
+        assign ls_unit_fp_wb.ack = unit_wb[UNIT_IDS.FP_FLW].ack;
+    end endgenerate
 
     generate if (CONFIG.INCLUDE_S_MODE) begin : gen_dtlb_dmmu
         tlb_lut_ram #(.WAYS(CONFIG.DTLB.WAYS), .DEPTH(CONFIG.DTLB.DEPTH))
