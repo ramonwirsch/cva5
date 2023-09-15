@@ -274,16 +274,12 @@ module renamer
 
     ////////////////////////////////////////////////////
     //Renamed Outputs
-    spec_table_t [RF_CONFIG.MAX_REGS_PER_ISSUE-1:0] spec_table_decode;
-    generate for (genvar i = 0; i < RF_CONFIG.MAX_REGS_PER_ISSUE; i++) begin : gen_renamed_addrs
+    spec_table_t [RF_CONFIG.TOTAL_READ_PORT_COUNT-1:0] spec_table_decode;
+    generate for (genvar i = 0; i < RF_CONFIG.TOTAL_READ_PORT_COUNT; i++) begin : gen_renamed_addrs
         if (i < GP_RF_FIXED_READ_PORT_COUNT) begin
-            if (CONFIG.INCLUDE_FPU_SINGLE) begin
-                assign spec_table_decode[i] = (decode.rs_addr[i].isFloat)? spec_table_fp_read_data[i+1] : spec_table_gp_read_data[i+1];
-            end else begin
-                assign spec_table_decode[i] = spec_table_gp_read_data[i+1];
-            end
+            assign spec_table_decode[i] = spec_table_gp_read_data[i+1];
         end else begin
-            assign spec_table_decode[i] = spec_table_fp_read_data[i+1];
+            assign spec_table_decode[i] = spec_table_fp_read_data[i-GP_RF_FIXED_READ_PORT_COUNT+1];
         end
 
         assign decode.phys_rs_addr[i] = spec_table_decode[i].phys_addr;
@@ -300,7 +296,7 @@ module renamer
     rename_rd_zero_assertion:
         assert property (@(posedge clk) disable iff (rst) (decode.uses_rd_gp && decode.rd_addr == 0) |-> (decode.phys_rd_addr == 0)) else $error("rd zero renamed");
 
-    for (genvar i = 0; i < RF_CONFIG.MAX_REGS_PER_ISSUE; i++) begin : rename_rs_zero_assertion
+    for (genvar i = 0; i < GP_RF_FIXED_READ_PORT_COUNT; i++) begin : rename_rs_zero_assertion
         assert property (@(posedge clk) disable iff (rst) (decode.rs_addr[i] == 0) |-> (decode.phys_rs_addr[i] == 0)) else $error("rs zero renamed");
     end
 

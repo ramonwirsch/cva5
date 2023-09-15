@@ -51,8 +51,8 @@ module decode_and_issue
         output logic decode_uses_rd_fp,
         output rs_addr_t decode_rd_addr,
         output phys_addr_t decode_phys_rd_addr,
-        output phys_addr_t decode_phys_rs_addr [MAX_RS_REG_COUNT_PER_INSN],
-        output logic [$clog2(RF_CONFIG.TOTAL_WB_GROUP_COUNT)-1:0] decode_rs_wb_group [MAX_RS_REG_COUNT_PER_INSN],
+        output phys_addr_t decode_phys_rs_addr [RF_CONFIG.TOTAL_READ_PORT_COUNT],
+        output logic [$clog2(RF_CONFIG.TOTAL_WB_GROUP_COUNT)-1:0] decode_rs_wb_group [RF_CONFIG.TOTAL_READ_PORT_COUNT],
 
         output logic instruction_issued,
         output logic instruction_issued_with_rd,
@@ -136,8 +136,8 @@ module decode_and_issue
     logic [NUM_UNITS-1:0] issue_to;
 
     rf_addr_t issue_rs_addr [MAX_RS_REG_COUNT_PER_INSN];
-    phys_addr_t issue_phys_rs_addr [MAX_RS_REG_COUNT_PER_INSN];
-    logic [$clog2(RF_CONFIG.TOTAL_WB_GROUP_COUNT)-1:0] issue_rs_wb_group [MAX_RS_REG_COUNT_PER_INSN];
+    phys_addr_t issue_phys_rs_addr [RF_CONFIG.TOTAL_READ_PORT_COUNT];
+    logic [$clog2(RF_CONFIG.TOTAL_WB_GROUP_COUNT)-1:0] issue_rs_wb_group [RF_CONFIG.TOTAL_READ_PORT_COUNT];
     logic issue_uses_rs [RF_CONFIG.TOTAL_READ_PORT_COUNT];
 
     logic pre_issue_exception_pending;
@@ -176,11 +176,6 @@ module decode_and_issue
 
     ////////////////////////////////////////////////////
     //Register File Support
-    localparam RSG1 = 0;
-    localparam RSG2 = 1;
-    localparam RSF1 = 2;
-    localparam RSF2 = 3;
-    localparam RSF3 = 4;
 
     logic rsg1_by_float;
     logic rd_for_gp_float;
@@ -319,13 +314,13 @@ module decode_and_issue
 
     ////////////////////////////////////////////////////
     //Register File Issue Interface
-    assign gp_rf.phys_rs_addr = issue_phys_rs_addr[RS1:RS2];
+    assign gp_rf.phys_rs_addr = issue_phys_rs_addr[RSG1:RSG2];
     assign gp_rf.phys_rd_addr = issue.phys_rd_addr;
-    assign gp_rf.rs_wb_group = '{ issue_rs_wb_group[RS1][0], issue_rs_wb_group[RS2][0]};
+    assign gp_rf.rs_wb_group = '{ issue_rs_wb_group[RSG1][0], issue_rs_wb_group[RSG2][0]};
     
     assign gp_rf.single_cycle_or_flush = (instruction_issued_with_rd & |issue.rd_addr & ~issue.is_multicycle) | (issue.stage_valid & issue.uses_rd & !issue.rd_addr.isFloat & |issue.rd_addr & gc.fetch_flush);
 
-    assign fp_rf.phys_rs_addr = issue_phys_rs_addr[RS1:RS3];
+    assign fp_rf.phys_rs_addr = issue_phys_rs_addr[RSF1:RSF3];
     assign fp_rf.phys_rd_addr = issue.phys_rd_addr;
     assign fp_rf.rs_wb_group = '{0, 0, 0};
     assign fp_rf.single_cycle_or_flush = issue.stage_valid && issue.uses_rd && issue.rd_addr.isFloat && gc.fetch_flush;
@@ -601,7 +596,7 @@ module decode_and_issue
 
         always_ff @(posedge clk) begin
             if (issue_to[UNIT_IDS.DIV])
-                prev_div_rs_addr <= issue_phys_rs_addr[RS1:RS2];
+                prev_div_rs_addr <= issue_phys_rs_addr[RSG1:RSG2];
         end
 
         assign div_op_reuse = {prev_div_result_valid, prev_div_rs_addr[RSG1], prev_div_rs_addr[RSG2]} == {1'b1, issue_phys_rs_addr[RSG1],issue_phys_rs_addr[RSG2]};
@@ -650,7 +645,7 @@ module decode_and_issue
                 fp_mac_op.add_mul_rs3 = 1;
                 if (opcode_trim inside {FNMADD_S_T, FNMSUB_S_T})
                     fp_mac_op.ovr_1st_add_in_sign = INV_A_SIGN;
-                fp_mac_op.negate_2nd_add_in = opcode_trim inside {FMSUB_S_T, FNMSUB_S_T};
+                fp_mac_op.negate_2nd_add_in = opcode_trim inside {FMSUB_S_T, FNMADD_S_T};
             end else begin
                 case (fn7_trim)
                     FADD_fn7_T : begin

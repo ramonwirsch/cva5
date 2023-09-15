@@ -1,1 +1,4 @@
 test_benches/verilator/build
+logs
+.vs
+.vscode

@@ -114,6 +114,7 @@ module fp_mac_unit_sp
     assign adderInputB = {adderInputB_org[33:32], invert_adderInputB ^ adderInputB_org[31], adderInputB_org[30:0]};
     sign_mod_t ovr_sign_mode;
     assign ovr_sign_mode = addMode_mulResult? state_mul[MUL_STAGES-1].op.ovr_1st_add_in_sign : input_buf.op.ovr_1st_add_in_sign;
+    logic will_need_adder;
 
     always_comb begin
         case (ovr_sign_mode)
@@ -128,21 +129,26 @@ module fp_mac_unit_sp
             addMode_mulResult = 1;
             start_add_in = 1;
             add_takes_mul = 1;
+            will_need_adder = 1;
         end else begin
             addMode_mulResult = 0;
             start_add_in = valid_input && !input_buf.op.mul; // we need add_advance also for logic only. So does not matter whether op instructs to actually add or not
             add_takes_mul = 0;
+            will_need_adder = valid_input && input_buf.op.add_rs1_rs2;
         end
     end
 
     logic addIn_out_taken;
     assign addIn_advance = !valid_add[0] || addIn_out_taken;
+    logic valid_for_adder;
 
     always_ff @(posedge clk) begin
         if (rst) begin
             valid_add[0] <= 0;
+            valid_for_adder <= 0;
         end else if (addIn_advance) begin
             valid_add[0] <= start_add_in;
+            valid_for_adder <= will_need_adder;
         end
         if (addIn_advance) begin
             adderInputA_r <= adderInputA;
@@ -154,17 +160,14 @@ module fp_mac_unit_sp
     logic add_takes_addIn;
     logic add_out_taken;
     assign add_advance = !valid_add[ADD_STAGES-1] || add_out_taken;
-    logic op_needs_add_stage0;
-    assign op_needs_add_stage0 = (state_add[0].op.add_mul_rs3 || state_add[0].op.add_rs1_rs2);
-    assign start_add = valid_add[0] && op_needs_add_stage0;
-    assign add_takes_addIn = start_add;
+    assign add_takes_addIn = valid_for_adder;
 
     always_ff @(posedge clk) begin
         if (rst) begin
             for (int i=1; i < ADD_STAGES; i++)
                 valid_add[i] <= 0;
         end else if (add_advance) begin
-            valid_add[1] <= start_add; // only continue if we actually need to add
+            valid_add[1] <= valid_for_adder; // only continue if we actually need to add
             for (int i=2; i < ADD_STAGES; i++)
                 valid_add[i] <= valid_add[i-1]; // only valid if add was needed
         end
@@ -189,7 +192,7 @@ module fp_mac_unit_sp
     logic final_add, final_mul, final_signMod;
     assign final_mul = valid_mul[MUL_STAGES-1] && state_mul[MUL_STAGES-1].op.add_mul_rs3 == 0;
     assign final_add = valid_add[ADD_STAGES-1];
-    assign final_signMod = valid_add[0] && !op_needs_add_stage0 && !state_add[0].op.mul; // only signMod result if there was NO other op at all
+    assign final_signMod = valid_add[0] && !valid_for_adder; // only signMod result if there was NO other op at all
 
     logic result_takes_mul, result_takes_add, result_takes_signMod;
     assign mul_out_taken = add_takes_mul || result_takes_mul;

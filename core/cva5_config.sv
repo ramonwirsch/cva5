@@ -173,6 +173,8 @@ package cva5_config;
     localparam int unsigned FP_RF_FIXED_WRITE_PORT_COUNT = 1;
     localparam int unsigned FP_WB_FIXED_PORT = 2;
 
+    localparam int unsigned MAX_POSSIBLE_RF_READ_PORTS = 5;
+
     function rf_params_t get_derived_rf_params (input cpu_config_t cpu);
         return '{
             TOTAL_WB_GROUP_COUNT : GP_RF_FIXED_WRITE_PORT_COUNT + (cpu.INCLUDE_FPU_SINGLE? FP_RF_FIXED_WRITE_PORT_COUNT : 0),
@@ -347,6 +349,13 @@ package cva5_config;
         RS3 = 2
     } rs1_index_t;
 
+    ////////////////////////////////////////////////////
+    // For when all separate RF Read Ports have to be handled in an array, use this numbering. RSF optional
+    localparam RSG1 = 0;
+    localparam RSG2 = 1;
+    localparam RSF1 = 2;
+    localparam RSF2 = 3;
+    localparam RSF3 = 4;
 
     ////////////////////////////////////////////////////
     //Exceptions

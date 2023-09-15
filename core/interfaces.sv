@@ -329,22 +329,22 @@ endinterface
 
 `define max(a,b) ((a > b) ? a : b)
 
-interface renamer_interface #(parameter NUM_WB_GROUPS = 2);
+interface renamer_interface #(parameter NUM_WB_GROUPS = 2, parameter RF_READ_PORTS = 3);
     import cva5_config::*;
     import riscv_types::*;
     import cva5_types::*;
 
     rs_addr_t rd_addr;
-    rf_addr_t rs_addr [MAX_RS_REG_COUNT_PER_INSN];
+    rf_addr_t rs_addr [MAX_RS_REG_COUNT_PER_INSN]; // straight from the insn can only name 3 regs. Each one could be fp OR gp
     logic [`max($clog2(NUM_WB_GROUPS)-1, 0):0] rd_wb_group;
     logic uses_rd_gp;
     logic uses_rd_fp;
     id_t id;
 
-    phys_addr_t phys_rs_addr [MAX_RS_REG_COUNT_PER_INSN];
+    phys_addr_t phys_rs_addr [RF_READ_PORTS]; // while max. 3 can be relevant at the same time, they go to different targets
     phys_addr_t phys_rd_addr;
 
-    logic [$clog2(NUM_WB_GROUPS)-1:0] rs_wb_group [MAX_RS_REG_COUNT_PER_INSN];
+    logic [$clog2(NUM_WB_GROUPS)-1:0] rs_wb_group [RF_READ_PORTS];
 
     modport renamer (
         input rd_addr, rs_addr, rd_wb_group, uses_rd_gp, uses_rd_fp, id,

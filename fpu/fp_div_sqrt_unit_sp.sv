@@ -11,8 +11,8 @@ module fp_div_sqrt_unit_sp
         unit_writeback_interface.unit wb
     );
 
-    localparam DIV_STAGES = 10; // includes input and output buffers
-    localparam SQRT_STAGES = 8; // includes input and output buffers
+    localparam DIV_STAGES = 12; // includes input and output buffers
+    localparam SQRT_STAGES = 10; // includes input and output buffers
 
     id_t id_input;
     logic valid_input;
@@ -45,7 +45,7 @@ module fp_div_sqrt_unit_sp
     flopoco_t result_div, result_sqrt;
     flopoco_t result_r;
 
-    f_div div( // 8 cycles
+    f_div div(
         .clk(clk),
         .ce(advance_div),
         .X(inputA),
@@ -53,7 +53,7 @@ module fp_div_sqrt_unit_sp
         .R(result_div)
     );
 
-    f_sqrt sqrt( // 6 cycles to allow 100MHz on Artix 7
+    FPSqrt_8_23 sqrt(
         .clk(clk),
         .ce(advance_sqrt),
         .X(inputA),

@@ -191,8 +191,8 @@ module cva5
     rs_addr_t decode_rd_addr;
     exception_sources_t decode_exception_unit;
     phys_addr_t decode_phys_rd_addr;
-    phys_addr_t decode_phys_rs_addr [MAX_RS_REG_COUNT_PER_INSN];
-    logic [$clog2(RF_CONFIG.TOTAL_WB_GROUP_COUNT)-1:0] decode_rs_wb_group [MAX_RS_REG_COUNT_PER_INSN];
+    phys_addr_t decode_phys_rs_addr [RF_CONFIG.TOTAL_READ_PORT_COUNT];
+    logic [$clog2(RF_CONFIG.TOTAL_WB_GROUP_COUNT)-1:0] decode_rs_wb_group [RF_CONFIG.TOTAL_READ_PORT_COUNT];
 
         //ID freeing
     retire_packet_t retire;
@@ -205,7 +205,10 @@ module cva5
          //Exception
     logic [31:0] oldest_pc;
 
-    renamer_interface #(.NUM_WB_GROUPS(RF_CONFIG.TOTAL_WB_GROUP_COUNT)) decode_rename_interface ();
+    renamer_interface #(
+        .NUM_WB_GROUPS(RF_CONFIG.TOTAL_WB_GROUP_COUNT),
+        .RF_READ_PORTS(RF_CONFIG.TOTAL_READ_PORT_COUNT)
+    ) decode_rename_interface ();
 
     //Global Control
     exception_interface exception [NUM_EXCEPTION_SOURCES]();
@@ -512,9 +515,9 @@ module cva5
         .clk (clk),
         .rst (rst),
         .gc (gc),
-        .decode_phys_rs_addr (decode_phys_rs_addr[RS1:RS2]),
+        .decode_phys_rs_addr (decode_phys_rs_addr[RSG1:RSG2]),
         .decode_phys_rd_addr (decode_phys_rd_addr),
-        .decode_rs_wb_group ('{ decode_rs_wb_group[RS1][0], decode_rs_wb_group[RS2][0]}),
+        .decode_rs_wb_group ('{ decode_rs_wb_group[RSG1][0], decode_rs_wb_group[RSG2][0]}),
         .decode_advance (decode_advance),
         .decode_uses_rd (decode_uses_rd_gp && |decode_phys_rd_addr), // written to and not zero
 
@@ -542,7 +545,7 @@ module cva5
             .clk (clk),
             .rst (rst),
             .gc (gc),
-            .decode_phys_rs_addr (decode_phys_rs_addr),
+            .decode_phys_rs_addr (decode_phys_rs_addr[RSF1:RSF3]),
             .decode_phys_rd_addr (decode_phys_rd_addr),
             .decode_rs_wb_group ('{'0, '0, '0}),
             .decode_advance (decode_advance),

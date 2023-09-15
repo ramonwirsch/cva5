@@ -94,9 +94,9 @@ fpu/flopoco/sv_dpi_impl/f_add_2cyc_dpi.sv
 fpu/flopoco/sv_dpi_impl/f_mul_param_dpi.sv
 fpu/flopoco/sv_dpi_impl/f_mul_1cyc_dpi.sv
 fpu/flopoco/sv_dpi_impl/f_div_param_dpi.sv
-fpu/flopoco/sv_dpi_impl/f_div_8cyc_dpi.sv
-fpu/flopoco/sv_dpi_impl/f_sqrt_param_dpi.sv
-fpu/flopoco/sv_dpi_impl/f_sqrt_6cyc_dpi.sv
+fpu/flopoco/sv_dpi_impl/f_div_10cyc_dpi.sv
+fpu/flopoco/sv_dpi_impl/FPSqrt_sp_param_dpi.sv
+fpu/flopoco/sv_dpi_impl/FPSqrt_sp_8cyc_dpi.sv
 fpu/flopoco/sv_dpi_impl/fp_to_fix_us_param_dpi.sv
 fpu/flopoco/sv_dpi_impl/fp_to_fix_us_1cyc_dpi.sv
 fpu/flopoco/sv_dpi_impl/fix_us_to_fp_param_dpi.sv
