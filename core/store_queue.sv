@@ -262,7 +262,7 @@ module store_queue
         for (int i = 0; i < CONFIG.SQ_DEPTH; i++) begin
             if (!released[i]) begin
                 for (int j = 0; j < SNOOP_PORTS; j++) begin
-                    if (wb_snoop_r[j].valid && wb_snoop_r[j].id == id_needed[j]) //TODO maybe store on which snoop port we expect the ID? just depends on FP bit
+                    if (wb_snoop_r[j].valid && wb_snoop_r[j].id == id_needed[i]) //TODO maybe store on which snoop port we expect the ID? just depends on FP bit
                         store_data_from_wb[i] <= wb_snooped_data[j];
                 end
             end        
