@@ -26,7 +26,9 @@ module fp_to_gp_unit_sp
 
     logic [31:0] toUnsignedIntResult;
 
-    fp_to_fix_us to32b( // 1 cycle
+    FP_to_u32_sp_param #(
+        .NUM_STAGES(1)
+    ) to32b (
         .clk(clk),
         .ce(stage_advance),
         .I(inputs.rs1),
@@ -41,7 +43,9 @@ module fp_to_gp_unit_sp
 
     logic XltY, XeqY, XleY;
 
-    f_compare cmp ( // 1 cycle
+    FPComp_sp_param #(
+        .NUM_STAGES(1)
+    )  cmp (
         .clk(clk),
         .ce(stage_advance),
         .X(inputs.rs1),

@@ -4,6 +4,10 @@ module fp_mac_unit_sp
     import cva5_config::*;
     import riscv_types::*;
     import cva5_types::*;
+    #(
+        parameter MUL_STAGES = 2, // only internal to MUL & output buffer, so min 1
+        parameter ADD_STAGES = 4 // including in buffers (which include sign-mod logic) & outputbuffer, so min 2
+    )
     (
         input logic clk,
         input logic rst,
@@ -44,12 +48,8 @@ module fp_mac_unit_sp
     //     |  (output)
 
 
-    localparam MUL_STAGES = 2; // only internal to MUL & output buffer
-
     logic valid_mul [MUL_STAGES];
     stage_state_t state_mul [MUL_STAGES];
-
-    localparam ADD_STAGES = 4; // including in buffers (which include sign-mod logic) & outputbuffer
 
     logic valid_add [ADD_STAGES];
     stage_state_t state_add [ADD_STAGES];
@@ -106,7 +106,9 @@ module fp_mac_unit_sp
         end
     end
 
-    f_mul mul( // 1cyc, (needs input + output buffers)
+    FPMul_sp_param #(
+        .NUM_STAGES(1)
+    ) mul ( // (needs input + output buffers)
         .clk(clk),
         .ce(mul_advance),
         .X(input_buf.rs1),
@@ -224,7 +226,9 @@ module fp_mac_unit_sp
         end
     end
 
-    f_add add( // 2 cyc 
+    FPAdd_sp_param #(
+        .NUM_STAGES(2)
+    ) add ( 
         .clk(clk),
         .ce(add_advance),
         .X(adderInputA_r),

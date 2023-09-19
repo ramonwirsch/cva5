@@ -87,20 +87,13 @@ fpu/flopoco/sv_impl/flopoco_to_ieee_sp.sv
 fpu/flopoco/sv_impl/ieee_to_flopoco_sp.sv
 fpu/flopoco/sv_impl/fp_rv_classify_sp.sv
 
-fpu/flopoco/sv_dpi_impl/f_compare_param_dpi.sv
-fpu/flopoco/sv_dpi_impl/f_compare_1cyc_dpi.sv
-fpu/flopoco/sv_dpi_impl/f_add_param_dpi.sv
-fpu/flopoco/sv_dpi_impl/f_add_2cyc_dpi.sv
-fpu/flopoco/sv_dpi_impl/f_mul_param_dpi.sv
-fpu/flopoco/sv_dpi_impl/f_mul_1cyc_dpi.sv
-fpu/flopoco/sv_dpi_impl/f_div_param_dpi.sv
-fpu/flopoco/sv_dpi_impl/f_div_10cyc_dpi.sv
+fpu/flopoco/sv_dpi_impl/FP_to_u32_sp_param_dpi.sv
+fpu/flopoco/sv_dpi_impl/FPAdd_sp_param_dpi.sv
+fpu/flopoco/sv_dpi_impl/FPComp_sp_param_dpi.sv
+fpu/flopoco/sv_dpi_impl/FPDiv_sp_param_dpi.sv
+fpu/flopoco/sv_dpi_impl/FPMul_sp_param_dpi.sv
 fpu/flopoco/sv_dpi_impl/FPSqrt_sp_param_dpi.sv
-fpu/flopoco/sv_dpi_impl/FPSqrt_sp_8cyc_dpi.sv
-fpu/flopoco/sv_dpi_impl/fp_to_fix_us_param_dpi.sv
-fpu/flopoco/sv_dpi_impl/fp_to_fix_us_1cyc_dpi.sv
-fpu/flopoco/sv_dpi_impl/fix_us_to_fp_param_dpi.sv
-fpu/flopoco/sv_dpi_impl/fix_us_to_fp_1cyc_dpi.sv
+fpu/flopoco/sv_dpi_impl/U32_to_FP_sp_param_dpi.sv
 
 fpu/fp_to_gp_unit_sp.sv
 fpu/fp_mac_unit_sp.sv

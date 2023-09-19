@@ -32,7 +32,9 @@ module fp_short_unit_sp
 
     flopoco_t inputA_r, inputB_r;
 
-    f_compare cmp ( // 1 cycle
+    FPComp_sp_param #(
+        .NUM_STAGES(1)
+    ) cmp (
         .clk(clk),
         .ce(stage_advance),
         .X(inputs.rs1),
@@ -50,7 +52,9 @@ module fp_short_unit_sp
     assign i2fInput = (inputs.op == FPCVT_FROM_I_OP && inputs.rs1_gp[31])? (~inputs.rs1_gp + 1) : inputs.rs1_gp;
     logic i2fInput_was_neg;
 
-    fix_us_to_fp intToFlopoco ( // 1 cyc "flopoco4_fix2fp_2000MHz_us" file
+    U32_to_FP_sp_param #(
+        .NUM_STAGES(1)
+    ) intToFlopoco ( // "flopoco4_fix2fp_2000MHz_us" file
         .clk(clk),
         .rst(rst),
         .ce(stage_advance),

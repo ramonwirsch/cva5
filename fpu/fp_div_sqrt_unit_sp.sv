@@ -2,6 +2,10 @@ module fp_div_sqrt_unit_sp
     import cva5_config::*;
     import riscv_types::*;
     import cva5_types::*;
+    #(
+        parameter DIV_STAGES = 12, // includes input and output buffers, so min 2
+        parameter SQRT_STAGES = 10 // includes input and output buffers, so min 2
+    )
     (
         input logic clk,
         input logic rst,
@@ -10,9 +14,6 @@ module fp_div_sqrt_unit_sp
         unit_issue_interface.unit issue,
         unit_writeback_interface.unit wb
     );
-
-    localparam DIV_STAGES = 12; // includes input and output buffers
-    localparam SQRT_STAGES = 10; // includes input and output buffers
 
     id_t id_input;
     logic valid_input;
@@ -45,7 +46,9 @@ module fp_div_sqrt_unit_sp
     flopoco_t result_div, result_sqrt;
     flopoco_t result_r;
 
-    f_div div(
+    FPDiv_sp_param #(
+        .NUM_STAGES(DIV_STAGES-2)
+    ) div (
         .clk(clk),
         .ce(advance_div),
         .X(inputA),
@@ -53,7 +56,9 @@ module fp_div_sqrt_unit_sp
         .R(result_div)
     );
 
-    FPSqrt_8_23 sqrt(
+    FPSqrt_sp_param #(
+        .NUM_STAGES(SQRT_STAGES-2)
+    ) sqrt (
         .clk(clk),
         .ce(advance_sqrt),
         .X(inputA),
