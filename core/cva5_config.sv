@@ -301,10 +301,10 @@ package cva5_config;
         int unsigned MUL;
         int unsigned DIV;
         int unsigned FP_TO_GP;
+        int unsigned FP_FLW; // fake ID for LS with FL result. Needs to be first FP result, as wb of LS cannot stall
         int unsigned FP_MAC;
         int unsigned FP_DIV;
         int unsigned FP_SHORT;
-        int unsigned FP_FLW; // fake ID for LS with FL result
         int unsigned BR; // must come last, because no result. UNIT_IDs and unit_wb count only match up when the first units have WB
         int unsigned IEC;
     } unit_id_param_t;
@@ -316,10 +316,10 @@ package cva5_config;
         MUL : 3,
         DIV : 4,
         FP_TO_GP : 5, // still has GP result
-        FP_MAC : 6, // FP results
-        FP_DIV : 7,
-        FP_SHORT : 8,
-        FP_FLW : 9, // special case. Comes from LS but 
+        FP_FLW : 6, // special case. Comes from LS but FP result
+        FP_MAC : 7, // FP results
+        FP_DIV : 8,
+        FP_SHORT : 9,
         BR : 10, // no result. Needs to be at the end
         IEC : 11
     };

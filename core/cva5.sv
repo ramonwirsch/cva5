@@ -67,12 +67,12 @@ module cva5
     localparam int unsigned MUL_UNIT_ID = CSR_UNIT_ID + int'(CONFIG.INCLUDE_MUL);
     localparam int unsigned DIV_UNIT_ID = MUL_UNIT_ID + int'(CONFIG.INCLUDE_DIV);
     localparam int unsigned FP_TO_GP_UNIT_ID = DIV_UNIT_ID + int'(CONFIG.INCLUDE_FPU_SINGLE);
-    localparam int unsigned FP_MAC_UNIT_ID = FP_TO_GP_UNIT_ID + int'(CONFIG.INCLUDE_FPU_SINGLE);
+    localparam int unsigned FP_FLW_UNIT_ID = FP_TO_GP_UNIT_ID + int'(CONFIG.INCLUDE_FPU_SINGLE); // needs to be highest priority wb, as no stall capabilities
+    localparam int unsigned FP_MAC_UNIT_ID = FP_FLW_UNIT_ID + int'(CONFIG.INCLUDE_FPU_SINGLE);
     localparam int unsigned FP_DIV_UNIT_ID = FP_MAC_UNIT_ID + int'(CONFIG.INCLUDE_FPU_SINGLE);
     localparam int unsigned FP_SHORT_UNIT_ID = FP_DIV_UNIT_ID + int'(CONFIG.INCLUDE_FPU_SINGLE);
-    localparam int unsigned FP_FLW_UNIT_ID = FP_SHORT_UNIT_ID + int'(CONFIG.INCLUDE_FPU_SINGLE);
     //Non-writeback units
-    localparam int unsigned BRANCH_UNIT_ID = FP_FLW_UNIT_ID + 1;
+    localparam int unsigned BRANCH_UNIT_ID = FP_SHORT_UNIT_ID + 1;
     localparam int unsigned IEC_UNIT_ID = BRANCH_UNIT_ID + 1;
 
     //Total number of units
@@ -80,16 +80,16 @@ module cva5
 
     localparam unit_id_param_t UNIT_IDS = '{
         ALU : ALU_UNIT_ID,
-        LS : LS_UNIT_ID, // TODO: special case FP & GP results
+        LS : LS_UNIT_ID,
         CSR : CSR_UNIT_ID,
         MUL : MUL_UNIT_ID,
         DIV : DIV_UNIT_ID,
         FP_TO_GP : FP_TO_GP_UNIT_ID,
         // FP results from here
+        FP_FLW : FP_FLW_UNIT_ID,
         FP_MAC : FP_MAC_UNIT_ID,
         FP_DIV : FP_DIV_UNIT_ID,
         FP_SHORT : FP_SHORT_UNIT_ID,
-        FP_FLW : FP_FLW_UNIT_ID,
         // No results from here
         BR : BRANCH_UNIT_ID,
         IEC : IEC_UNIT_ID
@@ -826,8 +826,8 @@ module cva5
     ////////////////////////////////////////////////////
     //Writeback
     //First writeback port: ALU
-    //Second writeback port: LS, CSR, [MUL], [DIV], [FP_TP_GP]
-    //Third write port: [FP_MAC], [FP_DIV], [FP_SHORT], [FP_FLW]
+    //Second writeback port: LS, CSR, [MUL], [DIV], [FP_TP_GP] // LS needs to be first, will not stall on missing ack
+    //Third write port: [FP_FLW], [FP_MAC], [FP_DIV], [FP_SHORT] / LS needs to be first, will not stall on missing ack
     localparam int unsigned NUM_WB_UNITS_PER_PORT [MAX_WB_GROUPS] = '{NUM_WB_UNITS_GROUP_1, NUM_WB_UNITS_GROUP_2, NUM_WB_UNITS_FP};
     writeback #(
         .CONFIG (CONFIG),
