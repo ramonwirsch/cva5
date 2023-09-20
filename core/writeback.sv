@@ -59,7 +59,7 @@ module writeback
 
     function static unit_count_t get_cumulative_unit_count();
         unit_count_t counts;
-        int unsigned cumulative_count = 0;
+        automatic int unsigned cumulative_count = 0;
         for (int i = 0; i < RF_CONFIG.TOTAL_WB_GROUP_COUNT; i++) begin
             counts[i] = cumulative_count;
             cumulative_count += NUM_WB_UNITS_PER_PORT[i];
@@ -106,7 +106,8 @@ module writeback
             .priority_vector (unit_done[i][NUM_WB_UNITS_PER_PORT[i]-1 : 0]),
             .encoded_result (unit_sel[i][NUM_WB_UNITS_PER_PORT[i] == 1 ? 0 : ($clog2(NUM_WB_UNITS_PER_PORT[i])-1) : 0])
         );
-        assign wb_packet[i].valid = |unit_done[i];
+        assign unit_sel[i][$clog2(NUM_WB_UNITS)-1 : (NUM_WB_UNITS_PER_PORT[i] == 1 ? 1 : $clog2(NUM_WB_UNITS_PER_PORT[i]))] = '0;
+        assign wb_packet[i].valid = |unit_done[i][NUM_WB_UNITS_PER_PORT[i]-1 : 0];
         assign wb_packet [i].id = unit_instruction_id[i][unit_sel[i]];
         assign wb_packet[i].data = unit_rd[i][unit_sel[i]];
 

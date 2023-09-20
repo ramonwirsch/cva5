@@ -107,7 +107,7 @@ module fp_mac_unit_sp
     end
 
     FPMul_sp_param #(
-        .NUM_STAGES(1)
+        .NUM_STAGES(MUL_STAGES-1)
     ) mul ( // (needs input + output buffers)
         .clk(clk),
         .ce(mul_advance),
@@ -227,7 +227,7 @@ module fp_mac_unit_sp
     end
 
     FPAdd_sp_param #(
-        .NUM_STAGES(2)
+        .NUM_STAGES(ADD_STAGES-2)
     ) add ( 
         .clk(clk),
         .ce(add_advance),

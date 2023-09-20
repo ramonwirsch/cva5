@@ -189,13 +189,13 @@ module decode_and_issue
 
     generate if (CONFIG.INCLUDE_FPU_SINGLE) begin: gen_fp_reg_decoding
         assign uses_rs[RSF1] = opcode_trim inside {FMADD_S_T, FMSUB_S_T, FNMADD_S_T, FNMSUB_S_T} || (opcode_trim == FP_T & !(fn7_trim inside {FMV_TO_FP_fn7_T, FCVT_TO_FP_fn7_T}));
-        assign uses_rs[RSF2] = opcode_trim inside {FMADD_S_T, FMSUB_S_T, FNMADD_S_T, FNMSUB_S_T, FSW_T} || (opcode_trim == FP_T && !(fn7_trim inside {FCVT_TO_FP_fn7_T, FCVT_TO_GP_fn7_T, FMV_TO_FP_fn7_T, FSQRT_fn7_T, FCLASS_MV_TO_GP_fn7_T}));
-        //TODO check if FSW also uses the forwarding that exempts rsg2 from use?
+        assign uses_rs[RSF2] = opcode_trim inside {FMADD_S_T, FMSUB_S_T, FNMADD_S_T, FNMSUB_S_T} || (opcode_trim == FP_T && !(fn7_trim inside {FCVT_TO_FP_fn7_T, FCVT_TO_GP_fn7_T, FMV_TO_FP_fn7_T, FSQRT_fn7_T, FCLASS_MV_TO_GP_fn7_T}));
+        // FSW_T excluded from official "use" of RSF2, so we can issue it as forwarded-store without stalling
         assign uses_rs[RSF3] = opcode_trim inside {FMADD_S_T, FMSUB_S_T, FNMADD_S_T, FNMSUB_S_T};
-        assign uses_rd_for_fp = opcode_trim inside {FLW_T, FMADD_S_T, FMSUB_S_T, FNMADD_S_T, FNMSUB_S_T, FP_T} && !(fn7_trim inside {FCVT_TO_GP_fn7_T, FCLASS_MV_TO_GP_fn7_T, FCMP_fn7_T});
+        assign uses_rd_for_fp = opcode_trim inside {FLW_T, FMADD_S_T, FMSUB_S_T, FNMADD_S_T, FNMSUB_S_T} || (opcode_trim == FP_T && !(fn7_trim inside {FCVT_TO_GP_fn7_T, FCLASS_MV_TO_GP_fn7_T, FCMP_fn7_T}));
 
         assign rs_addr[RS1].isFloat = uses_rs[RSF1];
-        assign rs_addr[RS2].isFloat = uses_rs[RSF2];
+        assign rs_addr[RS2].isFloat = uses_rs[RSF2] || opcode_trim == FSW_T; // use of rs2 for FSW ignored, cause we can store-forward with LS-unit, but still needs to be marked as float for reg-matching
         assign rs_addr[RS3].isFloat = 1;
     end else begin
 
@@ -298,7 +298,7 @@ module decode_and_issue
     //Issue Determination
     generate
         for (i=0; i< RF_CONFIG.GP_READ_PORT_COUNT; i++)
-            assign rs_conflict[i] = gp_rf.inuse[1'(i)] && issue_uses_rs[i];
+            assign rs_conflict[i] = gp_rf.inuse[i] && issue_uses_rs[i];
         for (i=RF_CONFIG.GP_READ_PORT_COUNT; i < RF_CONFIG.TOTAL_READ_PORT_COUNT; i++)
             assign rs_conflict[i] = fp_rf.inuse[i-RF_CONFIG.GP_READ_PORT_COUNT] && issue_uses_rs[i];
     endgenerate

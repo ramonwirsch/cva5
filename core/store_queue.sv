@@ -183,7 +183,10 @@ module store_queue
     end
     // global_id to sq_id mem
     always_ff @ (posedge clk) begin
-        if (sq.push)
+        if (rst)
+            for (int i=0; i < MAX_IDS; i++)
+                sq_ids[i] <= '0;
+        else if (sq.push)
             sq_ids[sq.data_in.id] <= sq_index;
     end
     //waiting on ID mem
@@ -200,13 +203,17 @@ module store_queue
     always_comb begin
         newly_released = '0;
         for (int i = 0; i < RETIRE_PORTS; i++) begin
-            store_released_index[i] = sq_ids[retire_ids[i]];            
+            store_released_index[i] = sq_ids[retire_ids[i]];
             store_released[i] = {1'b1, ids[store_released_index[i]]} == {retire_port_valid[i], retire_ids[i]};
-            newly_released |= CONFIG.SQ_DEPTH'(store_released[i]) << store_released_index[i];
+            newly_released |= (CONFIG.SQ_DEPTH'(store_released[i]) << store_released_index[i]);
         end
     end
+
     always_ff @ (posedge clk) begin
-        released <= (released | newly_released) & ~new_request_one_hot;
+        if (rst)
+            released <= '0;
+        else
+            released <= (released | newly_released) & ~new_request_one_hot;
     end
 
     assign sq.no_released_stores_pending = ~|(valid & released);
@@ -241,7 +248,7 @@ module store_queue
 
         flopoco_to_ieee_sp snoop_to_ieee (
             .clk(clk),
-            .X(wb_snoop_r[RF_CONFIG.FP_WB_PORT].data),
+            .X(wb_snoop_r[RF_CONFIG.FP_WB_PORT-1].data),
             .R(wb_snooped_fp_conv)
         );
 

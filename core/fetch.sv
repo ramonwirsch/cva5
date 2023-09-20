@@ -314,6 +314,9 @@ module fetch
         assign early_branch_flush_ras_adjust = (valid_fetch_result & (|unit_data_valid)) & fetch_attr.is_branch & (~is_branch_or_jump);
         if (ENABLE_TRACE_INTERFACE)
             assign tr_early_branch_correction = early_branch_flush;
+    end else begin
+        assign early_branch_flush = 0;
+        assign early_branch_flush_ras_adjust = 0;
     end endgenerate
     ////////////////////////////////////////////////////
     //End of Implementation

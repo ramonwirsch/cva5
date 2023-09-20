@@ -267,7 +267,10 @@ module load_store_unit
     //When switching units, ensure no outstanding loads so that there can be no timing collisions with results
     assign unit_switch = (current_unit != last_unit) & load_attributes.valid;
     always_ff @ (posedge clk) begin
-        unit_switch_in_progress <= (unit_switch_in_progress | unit_switch) & ~load_attributes.valid;
+        if (rst)
+            unit_switch_in_progress <= 0;
+        else
+            unit_switch_in_progress <= (unit_switch_in_progress | unit_switch) & ~load_attributes.valid;
     end
     assign unit_switch_hold = unit_switch | unit_switch_in_progress;
 
@@ -415,6 +418,7 @@ module load_store_unit
             end
         end else begin
             assign instr_inv.inv_valid = '0;
+            assign instr_inv_stall = 0;
         end
     endgenerate
 
@@ -456,6 +460,7 @@ module load_store_unit
     end else begin
 
         assign final_float_load_data = 0;
+        assign float_load_complete = 0;
 
     end endgenerate
 

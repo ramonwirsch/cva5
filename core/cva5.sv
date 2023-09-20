@@ -421,6 +421,7 @@ module cva5
             assign itlb.ready = 1;
             assign itlb.done = itlb.new_request;
             assign itlb.physical_address = itlb.virtual_address;
+            assign itlb.is_fault = 0;
         end
     endgenerate
 
@@ -678,6 +679,7 @@ module cva5
         assign unit_wb[UNIT_IDS.FP_FLW].id = ls_unit_fp_wb.id;
         assign unit_wb[UNIT_IDS.FP_FLW].done = ls_unit_fp_wb.done;
         assign ls_unit_fp_wb.ack = unit_wb[UNIT_IDS.FP_FLW].ack;
+        assign unit_issue[UNIT_IDS.FP_FLW].ready = 0;
     end endgenerate
 
     generate if (CONFIG.INCLUDE_S_MODE) begin : gen_dtlb_dmmu
@@ -705,6 +707,7 @@ module cva5
             assign dtlb.ready = 1;
             assign dtlb.done = dtlb.new_request;
             assign dtlb.physical_address = dtlb.virtual_address;
+            assign dtlb.is_fault = 0;
     end
     endgenerate
 
