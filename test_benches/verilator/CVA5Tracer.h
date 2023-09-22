@@ -105,7 +105,7 @@ static const char * const defaultEventNames[] = {
 //Testbench with CVA5 trace outputs on toplevel
 class CVA5Tracer {
 public:
-  CVA5Tracer(const char* const* eventNames = defaultEventNames, int numEvents = arraySize(defaultEventNames));
+  CVA5Tracer(const char* const* eventNames = defaultEventNames, int numEvents = arraySize(defaultEventNames), int scratchMemSizeKB = 128);
   
   [[deprecated]] CVA5Tracer(std::ifstream& programFile); // use loadMemoriesFromFile
   [[deprecated]] CVA5Tracer(std::ifstream& scratchFile, std::ifstream& ramFile); // use loadMemoriesFromFiles

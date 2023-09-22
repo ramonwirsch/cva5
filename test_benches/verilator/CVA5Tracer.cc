@@ -357,12 +357,12 @@ uint64_t CVA5Tracer::get_ticks() {
     return ticks;
 }
 
-CVA5Tracer::CVA5Tracer(const char* const* const eventNames, const int numEvents) : eventNames(eventNames), numEvents(numEvents) {
+CVA5Tracer::CVA5Tracer(const char* const* const eventNames, const int numEvents, const int scratchMemSizeKB) : eventNames(eventNames), numEvents(numEvents) {
     tb = new Vcva5_sim;
 
     axi_ddr = new axi_ddr_sim(tb);
 
-    mem = new SimMem(128);
+    mem = new SimMem(scratchMemSizeKB);
 
     instruction_r = 0; // illegal op, should actually not be relevant
     data_out_r = 0;
