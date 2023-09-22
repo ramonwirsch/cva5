@@ -51,6 +51,9 @@ module tag_bank
             else
                 data_out_a <= tag_entry[addr_a];
         end
+    end
+
+    always_ff @ (posedge clk) begin
         if (en_b) begin
             if (wen_b)
                 tag_entry[addr_b] <= data_in_b;
