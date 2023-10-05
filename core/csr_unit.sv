@@ -46,6 +46,7 @@ module csr_unit
 
         //GC
         input logic interrupt_taken,
+        input logic interrupt_pc_capture,
         output logic interrupt_pending,
         output logic processing_csr,
 
@@ -199,7 +200,7 @@ module csr_unit
     logic[XLEN-1:0] mtvec;
     logic[XLEN-1:0] medeleg;
     logic[XLEN-1:0] mideleg;
-    mip_t mip, mip_mask, mip_w_mask, mip_new;
+    mip_t mip, mip_mask, mip_new;
     mie_t mie, mie_mask;
     mip_t sip_mask;
     mie_t sie_mask;
@@ -220,7 +221,7 @@ module csr_unit
     //Extension context status: SD, FS, XS unused
     const mstatus_t mstatus_mask =
       '{default:0, mprv:(CONFIG.INCLUDE_U_MODE | CONFIG.INCLUDE_S_MODE), mxr:(CONFIG.INCLUDE_S_MODE),
-      sum:(CONFIG.INCLUDE_U_MODE & CONFIG.INCLUDE_S_MODE), mpp:'1, spp:(CONFIG.INCLUDE_S_MODE),
+      sum:(CONFIG.INCLUDE_U_MODE & CONFIG.INCLUDE_S_MODE), fs:(CONFIG.INCLUDE_FPU_SINGLE? 2'b11 : 2'b00), mpp:'1, spp:(CONFIG.INCLUDE_S_MODE),
       mpie:1, spie:(CONFIG.INCLUDE_S_MODE), mie:1, sie:(CONFIG.INCLUDE_S_MODE)};
 
     const mstatus_t sstatus_mask = '{default:0, mxr:1, sum:1, spp:1, spie:1, sie:1};
@@ -387,29 +388,24 @@ generate if (CONFIG.INCLUDE_M_MODE) begin : gen_csr_m_mode
 
     ////////////////////////////////////////////////////
     //MIP
-    assign mip_mask = '{default:0, meip:1, seip:CONFIG.INCLUDE_S_MODE, mtip:1, stip:CONFIG.INCLUDE_S_MODE, msip:1, ssip:CONFIG.INCLUDE_S_MODE};
-    assign mip_w_mask = '{default:0, seip:CONFIG.INCLUDE_S_MODE, stip:CONFIG.INCLUDE_S_MODE, ssip:CONFIG.INCLUDE_S_MODE};
-
-    always_comb begin
-        mip_new = '0;
-        mip_new.ssip = s_interrupt.software;
-        mip_new.stip = s_interrupt.timer;
-        mip_new.seip = s_interrupt.external;
-
-        mip_new.msip = m_interrupt.software;
-        mip_new.mtip = m_interrupt.timer;
-        mip_new.meip = m_interrupt.external;
-
-        mip_new &= mip_mask;
-    end
     
     always_ff @(posedge clk) begin
         if (rst)
             mip <= 0;
-        else if (mwrite_en(MIP) | (|mip_new))
-            mip <= (updated_csr & mip_w_mask) | mip_new;
+        else begin
+            if (mwrite_en(MIP) || |s_interrupt) begin
+                mip.ssip <= (updated_csr[1] | s_interrupt.software) && CONFIG.INCLUDE_S_MODE;
+                mip.stip <= (updated_csr[5] | s_interrupt.timer) && CONFIG.INCLUDE_S_MODE;
+                mip.seip <= (updated_csr[9] | s_interrupt.external) && CONFIG.INCLUDE_S_MODE;
+            end
+            if (mwrite_en(MIP) || m_interrupt.software) begin
+                mip.msip <= updated_csr[11] | m_interrupt.software;
+            end
+            mip.mtip <= m_interrupt.timer; // per spec, MT & ME are not writeable, source is responsible for clearing them. If I leave them as is, CVA5 will never clear them, as the OS has no business writing them to 0 per spec.
+            mip.meip <= m_interrupt.external;
+        end
     end
-    assign interrupt_pending = |(mip & mie) & mstatus.mie;
+    assign interrupt_pending = |(mip & mie) && (mstatus.mie || privilege_level != MACHINE_PRIVILEGE);
 
     ////////////////////////////////////////////////////
     //MIE
@@ -429,8 +425,10 @@ generate if (CONFIG.INCLUDE_M_MODE) begin : gen_csr_m_mode
     //exception causing PC.  Lower two bits tied to zero.
     always_ff @(posedge clk) begin
         mepc[1:0] <= '0;
-        if (mwrite_en(MEPC) | exception.valid | interrupt_taken)
-            mepc[XLEN-1:2] <= (exception.valid | interrupt_taken) ? exception.pc[XLEN-1:2] : updated_csr[XLEN-1:2];
+        if (exception.valid | interrupt_pc_capture)
+            mepc[XLEN-1:2] <= exception.pc[XLEN-1:2]; // always the oldest non-retired insn. passed-through by GC so still appropriate here (at the right time)
+        else if (mwrite_en(MEPC))
+            mepc[XLEN-1:2] <= updated_csr[XLEN-1:2];
     end
     assign epc = mepc;
 

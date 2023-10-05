@@ -77,6 +77,7 @@ module instruction_metadata_and_id_management
         output logic [LOG2_MAX_IDS:0] post_issue_count,
         //Exception
         output logic [31:0] oldest_pc,
+        output logic oldest_pc_being_retired,
         output logic [$clog2(NUM_EXCEPTION_SOURCES)-1:0] current_exception_unit
     );
     //////////////////////////////////////////
@@ -355,7 +356,12 @@ module instruction_metadata_and_id_management
     //Exception Support
      generate if (CONFIG.INCLUDE_M_MODE) begin : gen_id_exception_support
         assign oldest_pc = pc_table[retire_ids_next[0]];
+        assign oldest_pc_being_retired = retire_port_valid_next[0];
         assign current_exception_unit = exception_unit_table[retire_ids_next[0]];
+     end else begin
+        assign oldest_pc = '0;
+        assign oldest_pc_being_retired = 0;
+        assign current_exception_unit = '0;
      end endgenerate
 
     ////////////////////////////////////////////////////

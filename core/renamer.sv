@@ -168,15 +168,15 @@ module renamer
     rs_addr_t spec_tables_write_index;
     rs_addr_t spec_tables_write_index_mux [4];
 
-    logic spec_tables_common_update;
-    assign spec_tables_common_update = gc.init_clear | (retire.valid & gc.writeback_supress); // these reasons are shared across GP and FP
-    assign spec_table_gp_update = rollback_gp || rename_valid_gp || spec_tables_common_update;
-    assign spec_table_fp_update = rollback_fp || rename_valid_fp || spec_tables_common_update;
+    logic already_restored_current_gp, already_restored_current_fp;
+
+    assign spec_table_gp_update = rollback_gp || rename_valid_gp || gc.init_clear || (retire.valid && gc.writeback_supress && !inuse_list_output.rd_addr.isFloat && !already_restored_current_gp);
+    assign spec_table_fp_update = rollback_fp || rename_valid_fp || gc.init_clear || (retire.valid && gc.writeback_supress && inuse_list_output.rd_addr.isFloat && !already_restored_current_fp);
 
     logic [1:0] spec_tables_sel;
     
     one_hot_to_integer #(.C_WIDTH(4)) spec_table_sel_one_hot_to_int (
-        .one_hot ({gc.init_clear, rollback_any, (retire.valid & gc.writeback_supress), 1'b0}),
+        .one_hot ({gc.init_clear, rollback_any, (retire.valid && gc.writeback_supress), 1'b0}),
         .int_out (spec_tables_sel)
     );
 
@@ -219,6 +219,37 @@ module renamer
     );
     assign spec_table_gp_previous = spec_table_gp_read_data[0];
 
+    // Issue: if left alone, writeback_supress might restore the same ISA reg's mapping twice
+    //    lui  a1,0x33333     <- overwrites original mapping of a1
+    //    addi a1, a1, 0x333  <- overwrites new mapping of a1 again
+    // with both being speculative, already issued and needing to be reverted.
+    // Since the restoration is in execution order, the newer states are wrong when we want the original state back => need to prevent only the first writeback_supress per ISA reg to be restore to spec_table
+    // this is the simplest solution I could come up with.
+    // Alternatives:
+    //    * store up to [INFLIGHT] ISA regAddr and compare each supressed one with the already valid ones. Requires reset of up to [INFLIGHT] valid bits and comparisons on fetch_flush, but stores 7*[INFLIGHT] bits
+    //    * Track which mappings are inflight (might also have debugging purposes). But difficult, because in the exact situation, the same mapping, say a1 can be in flight multiple times with multiple phys-regs as destinations.
+    //      we would neeed to keep track of how many are still in flight per ISA reg, so that we could prevent all but the oldest be restored. So more than just a toggle-set. What is the upper limit of the same reg in flight? [INFLIGHT]?
+    //      its dead code, unless there are dependencies, but then they wont be inflight at the same time (unless sw)
+    //    * overhaul GC significantly. This seems to affect interrupts the most, and there, there is room for interpretation of which instruction will be the interrupted one and which will go through. It is not actually needed to supress inflight results, we could just interrupt a later instruction
+    //      but I do not see why this issue could not affect branches in the same way under the right circumstances. And changing GC was hard the first time, as it needs to be in-sync with a lot of distributed state without the state to sync with being directly available
+
+    logic restore_mapping_state_gp [0:31];
+
+    always_ff @(posedge clk) begin
+        if (rst || gc.fetch_flush) begin
+            for (int i=0; i < 32; i++)
+                restore_mapping_state_gp[i] <= 0;
+        end else if (retire.valid && gc.writeback_supress && !inuse_list_output.rd_addr.isFloat) begin
+            restore_mapping_state_gp[inuse_list_output.rd_addr.rs] <= 1;
+        end
+    end
+
+    assign already_restored_current_gp = restore_mapping_state_gp[inuse_list_output.rd_addr.rs];
+
+
+
+
+
     generate if (CONFIG.INCLUDE_FPU_SINGLE) begin : gen_fp_spec_tab
 
         phys_addr_t spec_table_fp_phys_next_mux [4];
@@ -260,16 +291,32 @@ module renamer
         always_ff @ (posedge clk) begin
             if (spec_table_fp_update || spec_table_gp_update) begin
                 spec_table_previous_r <= (spec_table_fp_update)? spec_table_fp_previous : spec_table_gp_previous;
+            end
         end
-    end
+
+
+        // same as for GP, although probably even more rare outside of useless code (overwriting the same reg again and again without using the result)
+        // FP has no useful 0-cycle pipe like the IALU, so multiple useful instructions being speculated will be RARE. But it will still brake the micro-arch-state
+        logic restore_mapping_state_fp [0:31];
+
+        always_ff @(posedge clk) begin
+            if (rst || gc.fetch_flush) begin
+                for (int i=0; i < 32; i++)
+                    restore_mapping_state_fp[i] <= 0;
+            end else if (retire.valid && gc.writeback_supress && inuse_list_output.rd_addr.isFloat) begin
+                restore_mapping_state_fp[inuse_list_output.rd_addr.rs] <= 1;
+            end
+        end
+
+        assign already_restored_current_fp = restore_mapping_state_fp[inuse_list_output.rd_addr.rs];
     end else begin 
         always_ff @ (posedge clk) begin
             if (spec_table_gp_update) begin
                 spec_table_previous_r <= spec_table_gp_previous;
             end
         end
+        assign already_restored_current_fp = 0;
     end endgenerate
-
     
 
     ////////////////////////////////////////////////////

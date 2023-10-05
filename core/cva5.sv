@@ -204,6 +204,7 @@ module cva5
     commit_packet_t commit_packet [RF_CONFIG.TOTAL_WB_GROUP_COUNT];
          //Exception
     logic [31:0] oldest_pc;
+    logic oldest_pc_being_retired;
 
     renamer_interface #(
         .NUM_WB_GROUPS(RF_CONFIG.TOTAL_WB_GROUP_COUNT),
@@ -224,6 +225,7 @@ module cva5
     logic [31:0] exception_target_pc;
 
     logic interrupt_taken;
+    logic interrupt_pc_capture;
     logic interrupt_pending;
 
     logic processing_csr;
@@ -339,6 +341,7 @@ module cva5
         .retire_port_valid(retire_port_valid),
         .post_issue_count(post_issue_count),
         .oldest_pc (oldest_pc),
+        .oldest_pc_being_retired(oldest_pc_being_retired),
         .current_exception_unit (current_exception_unit)
     );
 
@@ -723,6 +726,7 @@ module cva5
             .wb (unit_wb[UNIT_IDS.CSR]),
             .current_privilege(current_privilege),
             .interrupt_taken(interrupt_taken),
+            .interrupt_pc_capture(interrupt_pc_capture),
             .interrupt_pending(interrupt_pending),
             .processing_csr(processing_csr),
             .tlb_on(tlb_on),
@@ -759,6 +763,7 @@ module cva5
         .current_exception_unit (current_exception_unit),
         .gc (gc),
         .oldest_pc (oldest_pc),
+        .oldest_pc_being_retired(oldest_pc_being_retired),
         .mret(mret),
         .sret(sret),
         .epc(epc),
@@ -766,6 +771,7 @@ module cva5
         .retire_ids (retire_ids),
         .retire_ids_next (retire_ids_next),
         .interrupt_taken(interrupt_taken),
+        .interrupt_pc_capture(interrupt_pc_capture),
         .interrupt_pending(interrupt_pending),
         .processing_csr(processing_csr),
         .load_store_status(load_store_status),

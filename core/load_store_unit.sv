@@ -484,11 +484,11 @@ module load_store_unit
         assert property (@(posedge clk) disable iff (rst) load_complete |-> (load_attributes.valid && unit_data_valid[wb_attr.subunit_id]))
         else $error("Spurious load complete detected!");
 
-    // `ifdef ENABLE_SIMULATION_ASSERTIONS
-    //     invalid_ls_address_assertion:
-    //         assert property (@(posedge clk) disable iff (rst) (sub_unit_issue & ~ls_inputs.fence) |-> |sub_unit_address_match)
-    //         else $error("invalid L/S address");
-    // `endif
+    `ifdef ENABLE_SIMULATION_ASSERTIONS
+        invalid_ls_address_assertion:
+            assert property (@(posedge clk) disable iff (rst) (sub_unit_issue & ~ls_inputs.fence) |-> |sub_unit_address_match)
+            else $error("invalid L/S address");
+    `endif
 
     ////////////////////////////////////////////////////
     //Trace Interface

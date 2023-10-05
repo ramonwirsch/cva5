@@ -48,6 +48,7 @@ module gc_unit
         exception_interface.econtrol exception [NUM_EXCEPTION_SOURCES],
         input logic [31:0] exception_target_pc,
         input logic [31:0] oldest_pc,
+        input logic oldest_pc_being_retired,
 
         output logic mret,
         output logic sret,
@@ -62,6 +63,7 @@ module gc_unit
         //CSR Interrupts
         input logic interrupt_pending,
         output logic interrupt_taken,
+        output logic interrupt_pc_capture,
 
         input logic processing_csr,
 
@@ -226,38 +228,50 @@ module gc_unit
     //Exception handling
     generate if (CONFIG.INCLUDE_M_MODE) begin :gen_gc_m_mode
 
-    //Re-assigning interface inputs to array types so that they can be dynamically indexed
-    logic [NUM_EXCEPTION_SOURCES-1:0] exception_pending;
-    exception_code_t [NUM_EXCEPTION_SOURCES-1:0] exception_code;
-    id_t [NUM_EXCEPTION_SOURCES-1:0] exception_id;
-    logic [NUM_EXCEPTION_SOURCES-1:0][31:0] exception_tval;
-    logic exception_ack;
-    
-    for (genvar i = 0; i < NUM_EXCEPTION_SOURCES; i++) begin
-        assign exception_pending[i] = exception[i].valid;
-        assign exception_code[i] = exception[i].code;
-        assign exception_id[i] = exception[i].id;
-        assign exception_tval[i] = exception[i].tval;
-        assign exception[i].ack = exception_ack;
-    end
-    
-    //Exception valid when the oldest instruction is a valid ID.  This is done with a level of indirection (through the exception unit table)
-    //for better scalability, avoiding the need to compare against all exception sources.
-    always_comb begin
-        gc.exception_pending = |exception_pending;
-        gc.exception.valid = (retire_ids_next[0] == exception_id[current_exception_unit]) & exception_pending[current_exception_unit];
-        gc.exception.pc = oldest_pc;
-        gc.exception.code = exception_code[current_exception_unit];
-        gc.exception.tval = exception_tval[current_exception_unit];
-    end
+        //Re-assigning interface inputs to array types so that they can be dynamically indexed
+        logic [NUM_EXCEPTION_SOURCES-1:0] exception_pending;
+        exception_code_t [NUM_EXCEPTION_SOURCES-1:0] exception_code;
+        id_t [NUM_EXCEPTION_SOURCES-1:0] exception_id;
+        logic [NUM_EXCEPTION_SOURCES-1:0][31:0] exception_tval;
+        logic exception_ack;
+        
+        for (genvar i = 0; i < NUM_EXCEPTION_SOURCES; i++) begin
+            assign exception_pending[i] = exception[i].valid;
+            assign exception_code[i] = exception[i].code;
+            assign exception_id[i] = exception[i].id;
+            assign exception_tval[i] = exception[i].tval;
+            assign exception[i].ack = exception_ack;
+        end
+        
+        //Exception valid when the oldest instruction is a valid ID.  This is done with a level of indirection (through the exception unit table)
+        //for better scalability, avoiding the need to compare against all exception sources.
+        always_comb begin
+            gc.exception_pending = |exception_pending;
+            gc.exception.valid = (retire_ids_next[0] == exception_id[current_exception_unit]) & exception_pending[current_exception_unit];
+            gc.exception.pc = oldest_pc;
+            gc.exception.code = exception_code[current_exception_unit];
+            gc.exception.tval = exception_tval[current_exception_unit];
+        end
 
-    assign exception_ack = gc.exception.valid;
+        assign exception_ack = gc.exception.valid;
 
-    assign interrupt_taken = interrupt_pending & (next_state == PRE_ISSUE_FLUSH) & ~(ifence_in_progress | ret_in_progress | gc.exception.valid);
+        assign interrupt_taken = interrupt_pending & (next_state == PRE_ISSUE_FLUSH) & ~(ifence_in_progress | ret_in_progress | gc.exception.valid);
+        logic delayed_interrupt_capture;
 
-    assign mret = gc_inputs_r.is_mret & ret_in_progress & (next_state == PRE_ISSUE_FLUSH);
-    assign sret = gc_inputs_r.is_sret & ret_in_progress & (next_state == PRE_ISSUE_FLUSH);
+        always_ff @(posedge clk) begin
+            if (rst)
+                delayed_interrupt_capture <= 0;
+            else
+                delayed_interrupt_capture <= interrupt_taken && oldest_pc_being_retired;
+        end
+        assign interrupt_pc_capture = (interrupt_taken && !oldest_pc_being_retired) || delayed_interrupt_capture;
 
+        assign mret = gc_inputs_r.is_mret & ret_in_progress & (next_state == PRE_ISSUE_FLUSH);
+        assign sret = gc_inputs_r.is_sret & ret_in_progress & (next_state == PRE_ISSUE_FLUSH);
+
+    end else begin
+        assign interrupt_taken = 0;
+        assign interrupt_pc_capture = 0;
     end endgenerate
 
     //PC determination (trap, flush or return)
@@ -265,16 +279,16 @@ module gc_unit
     //on the second cycle the new PC is fetched
     generate if (CONFIG.INCLUDE_M_MODE || CONFIG.INCLUDE_IFENCE) begin :gen_gc_pc_override
 
-    always_ff @ (posedge clk) begin
-        gc_pc_override <= next_state inside {PRE_ISSUE_FLUSH, INIT_CLEAR_STATE};
-        gc_pc <=
-                        (gc.exception.valid | interrupt_taken) ? exception_target_pc :
-                        (gc_inputs_r.is_ifence) ? gc_inputs_r.pc_p4 :
-                        epc; //ret
-    end
-    //work-around for verilator BLKANDNBLK signal optimizations
-    assign gc.pc_override = gc_pc_override;
-    assign gc.pc = gc_pc;
+        always_ff @ (posedge clk) begin
+            gc_pc_override <= next_state inside { INIT_CLEAR_STATE, PRE_ISSUE_FLUSH };
+            gc_pc <=
+                            (gc.exception.valid | interrupt_taken) ? exception_target_pc :
+                            (gc_inputs_r.is_ifence) ? gc_inputs_r.pc_p4 :
+                            epc; //ret
+        end
+        //work-around for verilator BLKANDNBLK signal optimizations
+        assign gc.pc_override = gc_pc_override;
+        assign gc.pc = gc_pc;
 
     end endgenerate
     ////////////////////////////////////////////////////
