@@ -47,8 +47,8 @@ module gc_unit
         //Exception
         exception_interface.econtrol exception [NUM_EXCEPTION_SOURCES],
         input logic [31:0] exception_target_pc,
-        input logic [31:0] oldest_pc,
-        input logic oldest_pc_being_retired,
+        input logic [31:0] next_retiring_pc,
+        input logic next_retiring_pc_invalid,
 
         output logic mret,
         output logic sret,
@@ -124,6 +124,7 @@ module gc_unit
     logic post_issue_idle;
     logic ifence_in_progress;
     logic ret_in_progress;
+    logic interrupt_requested;
 
     //GC registered global outputs
     logic gc_init_clear;
@@ -170,7 +171,7 @@ module gc_unit
         gc_fetch_hold <= next_state inside {PRE_CLEAR_STATE, INIT_CLEAR_STATE, POST_ISSUE_DRAIN, PRE_ISSUE_FLUSH};
         gc_issue_hold <= processing_csr | (next_state inside {PRE_CLEAR_STATE, INIT_CLEAR_STATE, TLB_CLEAR_STATE, POST_ISSUE_DRAIN, PRE_ISSUE_FLUSH, POST_ISSUE_DISCARD});
         gc_writeback_supress <= next_state inside {PRE_CLEAR_STATE, INIT_CLEAR_STATE, POST_ISSUE_DISCARD};
-        gc_retire_hold <= next_state inside {PRE_ISSUE_FLUSH};
+        gc_retire_hold <= next_state inside {PRE_ISSUE_FLUSH} && !processing_csr;
         gc_init_clear <= next_state inside {INIT_CLEAR_STATE};
         gc_tlb_flush <= next_state inside {INIT_CLEAR_STATE, TLB_CLEAR_STATE};
         gc_sq_flush <= state inside {POST_ISSUE_DISCARD} & next_state inside {IDLE_STATE};
@@ -186,10 +187,17 @@ module gc_unit
     ////////////////////////////////////////////////////
     //GC State Machine
     always @(posedge clk) begin
-        if (rst)
+        if (rst) begin
             state <= RST_STATE;
-        else
+            interrupt_requested <= 0;
+        end else begin
             state <= next_state;
+            if (interrupt_pending) begin
+                interrupt_requested <= 1;
+            end else if (interrupt_requested && interrupt_pc_capture) begin
+                interrupt_requested <= 0;
+            end
+        end
     end
 
     always_comb begin
@@ -199,9 +207,9 @@ module gc_unit
             PRE_CLEAR_STATE : next_state = INIT_CLEAR_STATE;
             INIT_CLEAR_STATE : if (init_clear_done) next_state = IDLE_STATE;
             IDLE_STATE : begin
-                if (gc.exception.valid)//new pending exception is also oldest instruction
+                if (gc.exception.valid || (interrupt_pending && !processing_csr)) //new pending exception is also oldest instruction // DO NOT INTERRUPT CSR WRITES, CSR-State is not rolled back if we flush the pipeline, so they need to retire, if we issued
                     next_state = PRE_ISSUE_FLUSH;
-                else if (issue.new_request | interrupt_pending | gc.exception_pending)
+                else if (issue.new_request || gc.exception_pending)
                     next_state = POST_ISSUE_DRAIN;
             end
             TLB_CLEAR_STATE : if (tlb_clear_done) next_state = IDLE_STATE;
@@ -248,23 +256,30 @@ module gc_unit
         always_comb begin
             gc.exception_pending = |exception_pending;
             gc.exception.valid = (retire_ids_next[0] == exception_id[current_exception_unit]) & exception_pending[current_exception_unit];
-            gc.exception.pc = oldest_pc;
+            gc.exception.pc = next_retiring_pc;
             gc.exception.code = exception_code[current_exception_unit];
             gc.exception.tval = exception_tval[current_exception_unit];
         end
 
         assign exception_ack = gc.exception.valid;
 
-        assign interrupt_taken = interrupt_pending & (next_state == PRE_ISSUE_FLUSH) & ~(ifence_in_progress | ret_in_progress | gc.exception.valid);
+        assign interrupt_taken = (interrupt_pending || interrupt_requested) && (next_state == PRE_ISSUE_FLUSH) && !(ifence_in_progress || ret_in_progress || gc.exception.valid);
+        logic interrupt_pc_capture_precondition;
+        assign interrupt_pc_capture_precondition = state == PRE_ISSUE_FLUSH && interrupt_requested;
         logic delayed_interrupt_capture;
 
         always_ff @(posedge clk) begin
             if (rst)
                 delayed_interrupt_capture <= 0;
-            else
-                delayed_interrupt_capture <= interrupt_taken && oldest_pc_being_retired;
+            else if (interrupt_pc_capture_precondition && next_retiring_pc_invalid)
+                delayed_interrupt_capture <= 1; // if the next_retiring_pc will next cycle, when it would be captured at the earliest already have made unrevertible changes, we must not capture it, but the one after it
+                // but do not do this delay for branches currently being commited, as that would capture the "not-taken" insn after the branch
+                // alternatively: we could write special code to capture the resolved branch target in that case, which would be more efficient, but also more difficult to get 100% correct
+                // TODO check how this interacts with other state changes like CSR-writes
+            else if (!next_retiring_pc_invalid)
+                delayed_interrupt_capture <= 0;
         end
-        assign interrupt_pc_capture = (interrupt_taken && !oldest_pc_being_retired) || delayed_interrupt_capture;
+        assign interrupt_pc_capture = (interrupt_pc_capture_precondition || delayed_interrupt_capture)  && !next_retiring_pc_invalid;
 
         assign mret = gc_inputs_r.is_mret & ret_in_progress & (next_state == PRE_ISSUE_FLUSH);
         assign sret = gc_inputs_r.is_sret & ret_in_progress & (next_state == PRE_ISSUE_FLUSH);

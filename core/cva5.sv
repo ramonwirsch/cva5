@@ -203,8 +203,8 @@ module cva5
     wb_packet_t wb_packet [RF_CONFIG.TOTAL_WB_GROUP_COUNT];
     commit_packet_t commit_packet [RF_CONFIG.TOTAL_WB_GROUP_COUNT];
          //Exception
-    logic [31:0] oldest_pc;
-    logic oldest_pc_being_retired;
+    logic [31:0] next_retiring_pc;
+    logic next_retiring_pc_invalid;
 
     renamer_interface #(
         .NUM_WB_GROUPS(RF_CONFIG.TOTAL_WB_GROUP_COUNT),
@@ -319,6 +319,7 @@ module cva5
         .if_pc (if_pc),
         .pc_id_assigned (pc_id_assigned),
         .fetch_id (fetch_id),
+        .branch_flush(branch_flush),
         .early_branch_flush (early_branch_flush),
         .fetch_complete (fetch_complete),
         .fetch_instruction (fetch_instruction),
@@ -340,8 +341,8 @@ module cva5
         .retire_ids_next (retire_ids_next),
         .retire_port_valid(retire_port_valid),
         .post_issue_count(post_issue_count),
-        .oldest_pc (oldest_pc),
-        .oldest_pc_being_retired(oldest_pc_being_retired),
+        .next_retiring_pc(next_retiring_pc),
+        .next_retiring_pc_invalid(next_retiring_pc_invalid),
         .current_exception_unit (current_exception_unit)
     );
 
@@ -762,8 +763,8 @@ module cva5
         .exception_target_pc (exception_target_pc),
         .current_exception_unit (current_exception_unit),
         .gc (gc),
-        .oldest_pc (oldest_pc),
-        .oldest_pc_being_retired(oldest_pc_being_retired),
+        .next_retiring_pc(next_retiring_pc),
+        .next_retiring_pc_invalid(next_retiring_pc_invalid),
         .mret(mret),
         .sret(sret),
         .epc(epc),

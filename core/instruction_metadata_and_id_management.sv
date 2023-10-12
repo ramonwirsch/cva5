@@ -43,6 +43,7 @@ module instruction_metadata_and_id_management
         input logic pc_id_assigned,
 
         output id_t fetch_id,
+        input logic branch_flush,
         input logic early_branch_flush,
         input logic fetch_complete,
         input logic [31:0] fetch_instruction,
@@ -76,8 +77,8 @@ module instruction_metadata_and_id_management
         //CSR
         output logic [LOG2_MAX_IDS:0] post_issue_count,
         //Exception
-        output logic [31:0] oldest_pc,
-        output logic oldest_pc_being_retired,
+        output logic [31:0] next_retiring_pc,
+        output logic next_retiring_pc_invalid,
         output logic [$clog2(NUM_EXCEPTION_SOURCES)-1:0] current_exception_unit
     );
     //////////////////////////////////////////
@@ -355,12 +356,24 @@ module instruction_metadata_and_id_management
 
     //Exception Support
      generate if (CONFIG.INCLUDE_M_MODE) begin : gen_id_exception_support
-        assign oldest_pc = pc_table[retire_ids_next[0]];
-        assign oldest_pc_being_retired = retire_port_valid_next[0];
+        logic branch_flush_r;
+
+        assign next_retiring_pc = branch_flush_r? if_pc : pc_table[retire_ids_next[0]]; // if we just flushed away all valid insns, the next retiring has to be the target of branch_flush, which by this time should be in if_pc (if not reliably, cache)
+        assign next_retiring_pc_invalid = retire_port_valid_next[0] && retire_id_uses_rd[0]; // it was already decided to let the result retire, so current retiring_pc must not be used as resume adress, as it will not match RF state
         assign current_exception_unit = exception_unit_table[retire_ids_next[0]];
+
+        always_ff @(posedge clk) begin
+            if (rst)
+                branch_flush_r <= 0;
+            else if (branch_flush) // when branch flush occured, all insns after the most recently retired one were invalid and must not be taken as resume address for interrupts
+                branch_flush_r <= 1;
+            else if (pc_id_assigned)
+                branch_flush_r <= 0;
+        end
+
      end else begin
-        assign oldest_pc = '0;
-        assign oldest_pc_being_retired = 0;
+        assign next_retiring_pc = '0;
+        assign next_retiring_pc_invalid = 0;
         assign current_exception_unit = '0;
      end endgenerate
 
