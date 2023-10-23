@@ -140,39 +140,77 @@ void CVA5Tracer::reset_uart() {
 		//uartOptions.c_cflag |= (CLOCAL | CREAD); // enable receiver
 		tcsetattr(this->uartFile, TCSAFLUSH, &uartOptions); // Flush input/output buffer and apply changes
 	}
-	tb->read_uart = 0;
-	tb->uart_read_byte = 0;
+    tb->read_uart0 = 0;
+	tb->uart0_read_byte = 0;
+#ifdef HAS_2ND_UART
+    tb->read_uart1 = 0;
+	tb->uart1_read_byte = 0;
+#endif
+    uart0ReadPending = false;
+    uart1ReadPending = false;
 }
+
+// If we have 2 UART ports, then use the 2nd one for bootloader / automated stuff, the primary one remains stdout
+#ifdef HAS_2ND_UART
+#define REDIRECTABLE_UART_WRITE_EN tb->write_uart1
+#define REDIRECTABLE_UART_WRITE_DATA tb->uart1_write_byte
+#define REDIRECTABLE_UART_READ_DATA tb->uart1_read_byte
+#define REDIRECTABLE_UART_READ_VALID tb->read_uart1
+#define REDIRECTABLE_UART_READ_ACK tb->read_uart1_ack
+#define REDIRECTABLE_UART_READ_PENDING uart1ReadPending
+#else
+#define REDIRECTABLE_UART_WRITE_EN tb->write_uart0
+#define REDIRECTABLE_UART_WRITE_DATA tb->uart0_write_byte
+#define REDIRECTABLE_UART_READ_DATA tb->uart0_read_byte
+#define REDIRECTABLE_UART_READ_VALID tb->read_uart0
+#define REDIRECTABLE_UART_READ_ACK tb->read_uart0_ack
+#define REDIRECTABLE_UART_READ_PENDING uart0ReadPending
+#endif
 
 
 void CVA5Tracer::update_UART() {
-	if (tb->write_uart) {
-		std::cout <<  tb->uart_write_byte << std::flush;
+	if (tb->write_uart0) {
+		std::cout <<  tb->uart0_write_byte << std::flush;
         if (logFile) {
-		    *logFile << tb->uart_write_byte;
+		    *logFile << tb->uart0_write_byte;
         }
 	}
 
+    char c;
+#ifdef NOPE
+    if (read(fileno(stdin), &c, 1) == 1) {
+        tb->read_uart0 = c;
+        tb->uart0_read_byte = 1;
+        uart0ReadPending = true;
+    }
+
+    if(uart0ReadPending && tb->read_uart0_ack) {
+        uart0ReadPending = false;
+        tb->read_uart0 = 0;
+        tb->uart0_read_byte = 0;
+    }
+#endif
+
 	if (this->hasUartFile) {
 		// write handling (testbench to tty)
-		if (tb->write_uart) {
-			int len = write(this->uartFile, &tb->uart_write_byte, 1);
+		if (REDIRECTABLE_UART_WRITE_EN) {
+			int len = write(this->uartFile, &REDIRECTABLE_UART_WRITE_DATA, 1);
 			(void) len;
 		}
 
 		// clean up old read if needed
-		if(uartReadPending && tb->read_uart_ack) {
-			uartReadPending = false;
-			tb->read_uart = 0;
+		if(REDIRECTABLE_UART_READ_PENDING && REDIRECTABLE_UART_READ_ACK) {
+			REDIRECTABLE_UART_READ_PENDING = false;
+			REDIRECTABLE_UART_READ_VALID = 0;
+            REDIRECTABLE_UART_READ_DATA = 0;
 		}
 
 		// read handling (check tty for next character, and send to testbench)
-		if(!uartReadPending) {
-			char c;
+		if(!REDIRECTABLE_UART_READ_PENDING) {
 			if(read(this->uartFile, &c, 1) == 1) {
-				tb->uart_read_byte = c;
-				tb->read_uart = 1;
-				uartReadPending = true;
+				REDIRECTABLE_UART_READ_DATA = c;
+				REDIRECTABLE_UART_READ_VALID = 1;
+				REDIRECTABLE_UART_READ_PENDING = true;
 			}
 		}
 	}

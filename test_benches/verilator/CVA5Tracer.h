@@ -157,7 +157,8 @@ private:
 
   int uartFile;
   bool hasUartFile = false;
-  bool uartReadPending = false;
+  bool uart0ReadPending = false;
+  bool uart1ReadPending = false;
   int reset_length = 64;
   int stall_limit = 2000;
   int stall_count = 0;
