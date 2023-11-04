@@ -73,6 +73,13 @@ module instruction_metadata_and_id_management
         output id_t retire_ids [RETIRE_PORTS],
         output id_t retire_ids_next [RETIRE_PORTS],
         output logic retire_port_valid [RETIRE_PORTS],
+        /*
+          matched to retire_ids, same as retire_port_valid, but will ignore, whether there is an outstanding writeback.
+          Ops without side-effects / only RF writes need not wait for retiring in order to write to RF. Since we rename registers we can simply ignore them / rollback renamer state if op is never actually retired.
+          But memStores and other side-effects can only committed, when controlflow is guaranteed to reach it (i.e. when the previous op was retired)
+          Should be identical to retire_port_valid for memStores / anything that does not use rd. Only relevant if the ID in question is an op that has a side-effect outside of the RF (memory stores)
+        */
+        output logic id_with_sideffect_committed [RETIRE_PORTS],
 
         //CSR
         output logic [LOG2_MAX_IDS:0] post_issue_count,
@@ -105,6 +112,7 @@ module instruction_metadata_and_id_management
 
     retire_packet_t retire_next;
     logic retire_port_valid_next [RETIRE_PORTS];
+    logic id_with_sideffect_committed_next [RETIRE_PORTS];
 
     genvar i;
     ////////////////////////////////////////////////////
@@ -278,16 +286,14 @@ module instruction_metadata_and_id_management
     logic id_ready_to_retire [RETIRE_PORTS];
     logic [LOG2_RETIRE_PORTS-1:0] phys_id_sel;
     logic [RETIRE_PORTS-1:0] retire_id_uses_rd;
-    logic [RETIRE_PORTS-1:0] retire_id_waiting_for_writeback;
 
      generate for (i = 0; i < RETIRE_PORTS; i++) begin : gen_retire_writeback
         assign retire_id_uses_rd[i] = uses_rd_table[retire_ids_next[i]];
-        assign retire_id_waiting_for_writeback[i] = id_waiting_for_writeback[i];
      end endgenerate
 
     //Supports retiring up to RETIRE_PORTS instructions.  The retired block of instructions must be
     //contiguous and must start with the first retire port.  Additionally, only one register file writing 
-    //instruction is supported per cycle.
+    //instruction is supported per cycle (because Renamer can only process one destination reg change per cycle. CSR unit also depends on the write being in retire_port[0]).
     //If an exception is pending, only retire a single intrustuction per cycle.  As such, the pending
     //exception will have to become the oldest instruction retire_ids[0] before it can retire.
     logic retire_with_rd_found;
@@ -297,8 +303,9 @@ module instruction_metadata_and_id_management
         for (int i = 0; i < RETIRE_PORTS; i++) begin
             id_is_post_issue[i] = post_issue_count > ID_COUNTER_W'(i);
 
-            id_ready_to_retire[i] = (id_is_post_issue[i] & contiguous_retire & ~id_waiting_for_writeback[i]);
-            retire_port_valid_next[i] = id_ready_to_retire[i] & ~(retire_id_uses_rd[i] & retire_with_rd_found);
+            id_ready_to_retire[i] = id_is_post_issue[i] && ~(retire_id_uses_rd[i] && retire_with_rd_found) && contiguous_retire;
+            retire_port_valid_next[i] = id_ready_to_retire[i] && ~id_waiting_for_writeback[i];
+            id_with_sideffect_committed_next[i] = id_ready_to_retire[i]; // not enough to know it can be committed. ls_unit expects it only after forwarded_stores could have been stored. i.e. all previous ops must have been retired
      
             retire_with_rd_found |= retire_port_valid_next[i] & retire_id_uses_rd[i];
             contiguous_retire &= retire_port_valid_next[i] & ~gc.exception_pending;
@@ -325,8 +332,10 @@ module instruction_metadata_and_id_management
         retire.valid <= retire_next.valid;
         retire.phys_id <= retire_next.phys_id;
         retire.count <= gc.writeback_supress ? '0 : retire_next.count;
-        for (int i = 0; i < RETIRE_PORTS; i++)
+        for (int i = 0; i < RETIRE_PORTS; i++) begin
             retire_port_valid[i] <= retire_port_valid_next[i] & ~gc.writeback_supress;
+            id_with_sideffect_committed[i] <= id_with_sideffect_committed_next[i] & ~gc.writeback_supress;
+        end
     end
 
     ////////////////////////////////////////////////////

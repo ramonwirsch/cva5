@@ -51,7 +51,7 @@ module store_queue
 
         //Retire
         input id_t retire_ids [RETIRE_PORTS],
-        input logic retire_port_valid [RETIRE_PORTS]
+        input logic id_with_sideffect_committed [RETIRE_PORTS]
     );
 
     localparam LOG2_SQ_DEPTH = $clog2(CONFIG.SQ_DEPTH);
@@ -133,7 +133,11 @@ module store_queue
         fn3 : sq.data_in.fn3,
         is_float : sq.data_in.is_float,
         forwarded_store : sq.data_in.forwarded_store,
-        data : sq_in_data_processed
+        data : sq_in_data_processed,
+        is_amo_sc : sq.data_in.amo.is_sc,
+        is_amo_rmw : sq.data_in.amo.is_rmw,
+        amo_op : sq.data_in.amo.op,
+        has_paired_amo_write : sq.data_in.amo.is_rmw && sq.data_in.load
     };
     always_ff @ (posedge clk) begin
         if (sq.push)
@@ -204,7 +208,7 @@ module store_queue
         newly_released = '0;
         for (int i = 0; i < RETIRE_PORTS; i++) begin
             store_released_index[i] = sq_ids[retire_ids[i]];
-            store_released[i] = {1'b1, ids[store_released_index[i]]} == {retire_port_valid[i], retire_ids[i]};
+            store_released[i] = {1'b1, ids[store_released_index[i]]} == {id_with_sideffect_committed[i], retire_ids[i]};
             newly_released |= (CONFIG.SQ_DEPTH'(store_released[i]) << store_released_index[i]);
         end
     end
@@ -306,7 +310,11 @@ module store_queue
         fn3 : output_entry.fn3,
         is_float : output_entry.is_float,
         forwarded_store : output_entry.forwarded_store,
-        data : sq_data
+        data : sq_data,
+        is_amo_sc : output_entry.is_amo_sc,
+        is_amo_rmw : output_entry.is_amo_rmw,
+        amo_op : output_entry.amo_op,
+        has_paired_amo_write : output_entry.has_paired_amo_write
     };
 
     ////////////////////////////////////////////////////

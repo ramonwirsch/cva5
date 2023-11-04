@@ -60,7 +60,7 @@ module load_store_unit
 
         //Retire release
         input id_t retire_ids [RETIRE_PORTS],
-        input logic retire_port_valid [RETIRE_PORTS],
+        input logic id_with_sideffect_committed [RETIRE_PORTS],
 
         exception_interface.unit exception,
         output load_store_status_t load_store_status,
@@ -125,6 +125,7 @@ module load_store_unit
     logic unaligned_addr;
     logic load_exception_complete;
     logic fence_hold;
+    logic amo_hold;
 
     typedef struct packed{
         logic is_halfword;
@@ -143,6 +144,8 @@ module load_store_unit
 
     load_store_queue_interface lsq();
     logic tr_possible_load_conflict_delay;
+    logic unit_idle;
+    logic amo_hold_completed;
 
     ////////////////////////////////////////////////////
     //Implementation
@@ -187,11 +190,13 @@ module load_store_unit
 
     ////////////////////////////////////////////////////
     //Load-Store status
+    assign unit_idle = lsq.empty & (~load_attributes.valid) & units_ready;
     assign load_store_status = '{
         sq_empty : lsq.sq_empty,
         no_released_stores_pending : lsq.no_released_stores_pending,
-        idle : lsq.empty & (~load_attributes.valid) & units_ready
+        idle : unit_idle
     };
+
 
     ////////////////////////////////////////////////////
     //TLB interface
@@ -232,7 +237,8 @@ module load_store_unit
         is_float : ls_inputs.is_float,
         id : issue.id,
         forwarded_store : ls_inputs.forwarded_store,
-        id_needed : ls_inputs.store_forward_id
+        id_needed : ls_inputs.store_forward_id,
+        amo : ls_inputs.amo
     };
 
     assign lsq.potential_push = issue.possible_issue;
@@ -248,7 +254,7 @@ module load_store_unit
         .lsq (lsq),
         .wb_snoop (wb_snoop),
         .retire_ids (retire_ids),
-        .retire_port_valid (retire_port_valid),
+        .id_with_sideffect_committed (id_with_sideffect_committed),
         .tr_possible_load_conflict_delay (tr_possible_load_conflict_delay)
     );
     assign shared_inputs = lsq.data_out;
@@ -279,14 +285,22 @@ module load_store_unit
     assign units_ready = &unit_ready & (~unit_switch_hold) & (~instr_inv_stall);
     assign load_complete = (CONFIG.INCLUDE_FPU_SINGLE && !wb_attr.is_float) && |unit_data_valid;
 
-    assign issue.ready = (~tlb_on | tlb.ready) & (~lsq.full) & (~fence_hold) & (~exception.valid);
+    assign issue.ready = (~tlb_on | tlb.ready) & (~lsq.full) & (~fence_hold) & (~amo_hold) & (~exception.valid);
     assign sub_unit_issue = lsq.valid & units_ready;
 
+    assign amo_hold_completed = lsq.sq_empty || (lsq.valid && shared_inputs.store && shared_inputs.amo.is_release); // would be for a store with RL semantics, but all stores are in execution-order anyways so should never cause a hold
+
     always_ff @ (posedge clk) begin
-        if (rst)
+        if (rst) begin
             fence_hold <= 0;
-        else
-            fence_hold <= (fence_hold & ~load_store_status.idle) | (issue.new_request & ls_inputs.fence);
+            amo_hold <= 0;
+        end else begin
+            fence_hold <= (fence_hold && ~load_store_status.idle) || (issue.new_request && ls_inputs.fence);
+            // this is for acquire and release on AMO ops. Stores and loads will each retire in execution order, so all stores will always be aq&rl with other stores (and loads with other loads).
+            // Acquire/Release only cares about observable changes to memory, so only stores. Only problem for us is acquire on LR, which requires all existing stores to retire first. 
+            // Release on LR is discouraged by the spec and does not have to do anything. 
+            amo_hold <= (amo_hold && ~amo_hold_completed) || (issue.new_request && ls_inputs.amo.is_acquire && ls_inputs.amo.is_lr);
+        end
     end
 
     ////////////////////////////////////////////////////
@@ -319,7 +333,7 @@ module load_store_unit
     };
 
     assign load_attributes.data_in = mem_attr;
-    assign load_attributes.push = sub_unit_issue & shared_inputs.load;
+    assign load_attributes.push = sub_unit_issue && shared_inputs.load;
     assign load_attributes.potential_push = load_attributes.push;
     
     cva5_fifo #(.DATA_WIDTH($bits(load_attributes_t)), .FIFO_DEPTH(ATTRIBUTES_DEPTH))
@@ -349,11 +363,14 @@ module load_store_unit
 
     generate if (CONFIG.INCLUDE_DLOCAL_MEM) begin : gen_ls_local_mem
         assign sub_unit_address_match[LOCAL_MEM_ID] = dlocal_mem_addr_utils.address_range_check(shared_inputs.addr);
-        local_mem_sub_unit d_local_mem (
+        local_mem_sub_unit #(
+            .INCLUDE_AMO(CONFIG.INCLUDE_AMO)
+        ) d_local_mem (
             .clk (clk), 
             .rst (rst),
             .unit (sub_unit[LOCAL_MEM_ID]),
-            .local_mem (data_bram)
+            .local_mem (data_bram),
+            .amo (shared_inputs.amo)
         );
         end
     endgenerate
@@ -402,7 +419,7 @@ module load_store_unit
                 .sc_complete (sc_complete),
                 .sc_success (sc_success),
                 .clear_reservation (clear_reservation),
-                .amo (ls_inputs.amo),
+                .amo (shared_inputs.amo),
                 .uncacheable (uncacheable),
                 .ls (sub_unit[DCACHE_ID])
             );

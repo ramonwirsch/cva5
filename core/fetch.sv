@@ -255,7 +255,8 @@ module fetch
             .clk (clk), 
             .rst (rst),
             .unit (sub_unit[LOCAL_MEM_ID]),
-            .local_mem (instruction_bram)
+            .local_mem (instruction_bram),
+            .amo()
         );
     end
     endgenerate

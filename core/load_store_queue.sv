@@ -41,7 +41,7 @@ module load_store_queue //ID-based input buffer for Load/Store Unit
 
         //Retire release
         input id_t retire_ids [RETIRE_PORTS],
-        input logic retire_port_valid [RETIRE_PORTS],
+        input logic id_with_sideffect_committed [RETIRE_PORTS],
 
         output logic tr_possible_load_conflict_delay
     );
@@ -52,6 +52,8 @@ module load_store_queue //ID-based input buffer for Load/Store Unit
         logic is_float;
         id_t id;
         logic [CONFIG.SQ_DEPTH-1:0] potential_store_conflicts;
+        logic is_amo_lr;
+        logic has_paired_amo_write;
     } lq_entry_t;
 
     addr_hash_t addr_hash;
@@ -59,6 +61,7 @@ module load_store_queue //ID-based input buffer for Load/Store Unit
     sq_entry_t sq_entry;
     logic store_conflict;
     logic load_selected;
+    logic fused_amo_load_and_store;
 
     lq_entry_t lq_data_in;
     lq_entry_t lq_data_out;
@@ -91,7 +94,7 @@ module load_store_queue //ID-based input buffer for Load/Store Unit
     //FIFO control signals
     assign lq.push = lsq.push & lsq.data_in.load;
     assign lq.potential_push = lsq.potential_push;
-    assign lq.pop = lsq.pop & load_selected;
+    assign lq.pop = lsq.pop && (load_selected || fused_amo_load_and_store);
 
     //FIFO data ports
     assign lq_data_in = '{
@@ -99,14 +102,16 @@ module load_store_queue //ID-based input buffer for Load/Store Unit
         fn3 : lsq.data_in.fn3,
         is_float : lsq.data_in.is_float,
         id : lsq.data_in.id, 
-        potential_store_conflicts : potential_store_conflicts
+        potential_store_conflicts : potential_store_conflicts,
+        is_amo_lr : lsq.data_in.amo.is_lr,
+        has_paired_amo_write : lsq.data_in.amo.is_rmw // will only be pushed if marked as load
     };
     assign lq.data_in = lq_data_in;
     assign lq_data_out = lq.data_out;
     ////////////////////////////////////////////////////
     //Store Queue
-    assign sq.push = lsq.push &  lsq.data_in.store;
-    assign sq.pop = lsq.pop & ~load_selected;
+    assign sq.push = lsq.push & lsq.data_in.store;
+    assign sq.pop = lsq.pop && (~load_selected || fused_amo_load_and_store);
     assign sq.data_in = lsq.data_in;
 
     store_queue  # (
@@ -124,25 +129,35 @@ module load_store_queue //ID-based input buffer for Load/Store Unit
         .store_conflict (store_conflict),
         .wb_snoop (wb_snoop),
         .retire_ids (retire_ids),
-        .retire_port_valid (retire_port_valid)
+        .id_with_sideffect_committed (id_with_sideffect_committed)
     );
 
     ////////////////////////////////////////////////////
     //Output
     //Priority is for loads over stores.
-    //A store will be selected only if either no loads are ready, OR if the store queue is full and a store is ready
-    assign load_selected = lq.valid & ~store_conflict;// & ~(sq_full & sq.valid);
+    //A store will be selected only if either no loads are ready // OR if the store queue is full and a store is ready
+    // For AMO RMW ops like amoadd, fuse matching load and store queue entries together. When fusing, does not technically matter whether load is selected or not, both will be valid and overlap
+    assign load_selected = lq.valid && ~store_conflict && !lq_data_out.has_paired_amo_write;// & ~(sq_full & sq.valid);
+    assign fused_amo_load_and_store = sq.valid && sq.data_out.has_paired_amo_write && lq.valid && lq_data_out.has_paired_amo_write;
 
-    assign lsq.valid = load_selected | sq.valid;
+    assign lsq.valid = load_selected || (sq.valid && !sq.data_out.has_paired_amo_write) || fused_amo_load_and_store;
     assign lsq.data_out = '{
         addr : load_selected ? lq_data_out.addr : sq.data_out.addr,
-        load : load_selected,
-        store : ~load_selected,
+        load : load_selected || fused_amo_load_and_store,
+        store : ~load_selected || fused_amo_load_and_store,
         be : load_selected ? '0 : sq.data_out.be,
         fn3 : load_selected ? lq_data_out.fn3 : sq.data_out.fn3,
         is_float : load_selected ? lq_data_out.is_float : sq.data_out.is_float,
         data_in : sq.data_out.data,
-        id : lq_data_out.id
+        id : lq_data_out.id,
+        amo : '{
+            is_lr : lq_data_out.is_amo_lr,
+            is_sc : sq.data_out.is_amo_sc,
+            is_rmw : sq.data_out.is_amo_rmw,
+            is_acquire : 0,
+            is_release : 0,
+            op : sq.data_out.amo_op
+        }
     };
 
     assign lsq.sq_empty = sq.empty;

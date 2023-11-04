@@ -135,7 +135,7 @@ module dcache
     //LR and AMO ops are forced misses (if there is a tag hit they will reuse the same way)
     //Signal is valid for a single cycle, RAM enables are used to hold outputs in case of pipeline stalls
     always_ff @ (posedge clk) begin
-        read_hit_allowed <= ls.new_request & ls.re & dcache_on & ~(amo.is_lr | amo.is_amo) & ~uncacheable;
+        read_hit_allowed <= ls.new_request & ls.re & dcache_on & ~(amo.is_lr | amo.is_rmw) & ~uncacheable;
         read_hit_data_valid <= read_hit_allowed;
         second_cycle <= ls.new_request;
         tag_update <= second_cycle & dcache_on & stage2.load & ~tag_hit & ~stage2.uncacheable;//Cache enabled, read miss
@@ -161,7 +161,7 @@ module dcache
     assign l1_request.rnw = ~stage2.store;
     assign l1_request.be = stage2.be;
     assign l1_request.size = (stage2.load & ~stage2.uncacheable) ? 5'(CONFIG.DCACHE.LINE_W-1) : 0;//LR and AMO ops are included in load
-    assign l1_request.is_amo = (stage2.amo.is_amo | stage2.amo.is_lr | stage2.amo.is_sc);
+    assign l1_request.is_amo = (stage2.amo.is_rmw | stage2.amo.is_lr | stage2.amo.is_sc);
     assign l1_request.amo = stage2.amo.op;
 
     always_ff @ (posedge clk) begin
@@ -207,7 +207,7 @@ module dcache
 
     //If atomic load (LR or AMO op) and there's a tag hit reuse same line
     logic stage2_amo_with_load;
-    assign stage2_amo_with_load = stage2.amo.is_amo | stage2.amo.is_lr;
+    assign stage2_amo_with_load = stage2.amo.is_rmw | stage2.amo.is_lr;
     always_ff @ (posedge clk) begin
         if (second_cycle) begin
             tag_update_way<= (stage2_amo_with_load & tag_hit) ? tag_hit_way : replacement_way;
@@ -252,7 +252,7 @@ module dcache
     endgenerate
 
     always_comb begin
-        if (stage2.amo.is_amo & is_target_word)
+        if (stage2.amo.is_rmw & is_target_word)
             new_line_data = amo_result;
         else if (stage2.amo.is_sc)
             new_line_data = stage2.data;

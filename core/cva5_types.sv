@@ -143,8 +143,10 @@ package cva5_types;
     typedef struct packed{
         logic is_lr;
         logic is_sc;
-        logic is_amo;
-        logic [4:0] op;
+        logic is_rmw; // other amo ops that are not LR or SC. THose should all read-modify-write their target location. Whether the result is demanded for rd depends on is_load of the memory op
+        logic is_acquire;
+        logic is_release;
+        logic [4:0] op; // original amo-opcode. Includes LR and SC
     } amo_details_t;
 
     typedef struct packed{
@@ -261,6 +263,7 @@ package cva5_types;
         id_t id;
         logic forwarded_store;
         id_t id_needed;
+        amo_details_t amo;
     } lsq_entry_t;
 
     typedef struct packed {
@@ -270,6 +273,10 @@ package cva5_types;
         logic is_float;
         logic forwarded_store;
         logic [31:0] data;
+        logic is_amo_sc;
+        logic is_amo_rmw;
+        logic [4:0] amo_op;
+        logic has_paired_amo_write;
     } sq_entry_t;
 
     typedef struct packed {
@@ -306,6 +313,7 @@ package cva5_types;
         logic [2:0] fn3;
         logic [31:0] data_in;
         id_t id;
+        amo_details_t amo;
     } data_access_shared_inputs_t;
 
     typedef enum  {

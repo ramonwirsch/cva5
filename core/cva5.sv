@@ -199,6 +199,7 @@ module cva5
     id_t retire_ids [RETIRE_PORTS];
     id_t retire_ids_next [RETIRE_PORTS];
     logic retire_port_valid [RETIRE_PORTS];
+    logic id_with_sideffect_committed [RETIRE_PORTS];
         //Writeback
     wb_packet_t wb_packet [RF_CONFIG.TOTAL_WB_GROUP_COUNT];
     commit_packet_t commit_packet [RF_CONFIG.TOTAL_WB_GROUP_COUNT];
@@ -339,7 +340,8 @@ module cva5
         .retire (retire),
         .retire_ids (retire_ids),
         .retire_ids_next (retire_ids_next),
-        .retire_port_valid(retire_port_valid),
+        .retire_port_valid (retire_port_valid),
+        .id_with_sideffect_committed(id_with_sideffect_committed),
         .post_issue_count(post_issue_count),
         .next_retiring_pc(next_retiring_pc),
         .next_retiring_pc_invalid(next_retiring_pc_invalid),
@@ -666,7 +668,7 @@ module cva5
         .data_bram (data_bram),
         .wb_snoop (wb_snoop),
         .retire_ids (retire_ids),
-        .retire_port_valid(retire_port_valid),
+        .id_with_sideffect_committed(id_with_sideffect_committed),
         .exception (exception[LS_EXCEPTION]),
         .load_store_status(load_store_status),
         .wb (unit_wb[UNIT_IDS.LS]),
@@ -768,8 +770,6 @@ module cva5
         .mret(mret),
         .sret(sret),
         .epc(epc),
-        .retire (retire),
-        .retire_ids (retire_ids),
         .retire_ids_next (retire_ids_next),
         .interrupt_taken(interrupt_taken),
         .interrupt_pc_capture(interrupt_pc_capture),
