@@ -1,3 +1,5 @@
 [submodule "fpu/flopoco"]
 	path = fpu/flopoco
-	url = git@gitlab.rs.e-technik.tu-darmstadt.de:cgra/flopoco-operators.git
+	#url = https://github.com/ramonwirsch/flopoco-operators.git
+	url = git@gitlab.rs.e-technik.tu-darmstadt.de:cgra/flopoco-operators
+
