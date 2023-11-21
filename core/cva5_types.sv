@@ -36,6 +36,8 @@ package cva5_types;
     typedef logic [3:0] addr_hash_t;
     typedef logic [5:0] phys_addr_t;
 
+    typedef logic [1:0] mem_subunit_t;
+
     typedef struct packed {
         logic isFloat;
         rs_addr_t rs;
@@ -256,16 +258,19 @@ package cva5_types;
         logic [31:0] addr;
         logic load;
         logic store;
+        logic loads_non_destructive;
         logic [3:0] be;
         logic [2:0] fn3;
         logic is_float;
         logic [MAX_POSSIBLE_REG_BITS-1:0] data;
         id_t id;
+        mem_subunit_t subunit_id;
         logic forwarded_store;
         id_t id_needed;
         amo_details_t amo;
     } lsq_entry_t;
 
+    // used for all destructive memory accesses. Includes Peri-Loads, that must only execute on retire
     typedef struct packed {
         logic [31:0] addr;
         logic [3:0] be;
@@ -273,15 +278,16 @@ package cva5_types;
         logic is_float;
         logic forwarded_store;
         logic [31:0] data;
+        mem_subunit_t subunit_id;
         logic is_amo_sc;
         logic is_amo_rmw;
         logic [4:0] amo_op;
-        logic has_paired_amo_write;
+        logic has_paired_load;
     } sq_entry_t;
 
     typedef struct packed {
         logic sq_empty;
-        logic no_released_stores_pending;
+        logic no_commited_ops_pending;
         logic idle;
     } load_store_status_t;
 
@@ -313,6 +319,7 @@ package cva5_types;
         logic [2:0] fn3;
         logic [31:0] data_in;
         id_t id;
+        mem_subunit_t subunit_id;
         amo_details_t amo;
     } data_access_shared_inputs_t;
 
@@ -327,9 +334,9 @@ package cva5_types;
         logic fetch_hold;
         logic issue_hold;
         logic fetch_flush;
-        logic writeback_supress;
+        logic writeback_suppress;
         logic retire_hold;
-        logic sq_flush;
+        logic memq_flush;
         logic tlb_flush;
         logic exception_pending;
         exception_packet_t exception;

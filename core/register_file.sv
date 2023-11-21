@@ -134,7 +134,7 @@ module register_file
             .rst(rst),
             .write_addr(commit[i].phys_addr),
             .new_data(commit[i].data[DATA_WIDTH-1:0]),
-            .commit(commit[i].valid & ~gc.writeback_supress),
+            .commit(commit[i].valid & ~gc.writeback_suppress),
             .read_addr(decode_phys_rs_addr),
             .data(rs_data_set[i])
         );

@@ -45,7 +45,7 @@ module local_mem_sub_unit
 
     amo_alu_inputs_t amo_alu_inputs;
     logic [XLEN-1:0] amo_rs2;
-    logic amo_read_modify_write_in_progress;
+    logic [1:0] amo_read_modify_write_in_progress;
     logic [XLEN-3:0] amo_addr;
 
     assign amo_alu_inputs.rs1_load = local_mem.data_out;
@@ -58,18 +58,20 @@ module local_mem_sub_unit
     //             (lr, sc are ignored / handled like normal reads and writes. TODO we should reserve addresses in case there are multiple threads that use that instead of locking the scheduler)
     generate if (INCLUDE_AMO) begin: gen_amo
         logic [XLEN-1:0] amo_result;
+        logic [XLEN-1:0] amo_result_r;
         logic amo_read_then_write;
-        assign amo_read_then_write = unit.new_request && amo.is_rmw && amo.op != AMO_SWAP_FN5;
+        assign amo_read_then_write = unit.new_request && amo.is_rmw;
 
         always_ff @ (posedge clk) begin
             amo_rs2 <= unit.data_in;
             amo_addr <= word_addr;
+            amo_result_r <= amo_result;
             if (rst)
-                amo_read_modify_write_in_progress <= 0;
-            else if (amo_read_modify_write_in_progress)
-                amo_read_modify_write_in_progress <= 0;
+                amo_read_modify_write_in_progress <= '0;
+            else if (|amo_read_modify_write_in_progress)
+                amo_read_modify_write_in_progress <= {amo_read_modify_write_in_progress[0], 1'b0};
             else
-                amo_read_modify_write_in_progress <= amo_read_then_write; // on for 1 cycle, if we do any read-mody-write op
+                amo_read_modify_write_in_progress <= {amo_read_modify_write_in_progress[0], amo_read_then_write}; // on for 2 cycle, if we do any read-mody-write op
 
         end
 
@@ -78,9 +80,9 @@ module local_mem_sub_unit
             .result (amo_result)
         );
 
-        assign local_mem.data_in = amo_read_modify_write_in_progress? amo_result : unit.data_in;
-        assign local_mem.en = unit.new_request || amo_read_modify_write_in_progress;
-        assign local_mem.be = amo_read_modify_write_in_progress? 4'hF : (amo_read_then_write? 4'h0 : unit.be);
+        assign local_mem.data_in = amo_read_modify_write_in_progress[1]? amo_result_r : unit.data_in;
+        assign local_mem.en = unit.new_request || |amo_read_modify_write_in_progress;
+        assign local_mem.be = amo_read_modify_write_in_progress[1]? 4'hF : (amo_read_then_write? 4'h0 : unit.be);
 
     end else begin
         assign local_mem.data_in = unit.data_in;
@@ -89,15 +91,15 @@ module local_mem_sub_unit
         assign amo_read_modify_write_in_progress = 0;
     end endgenerate
 
-    assign local_mem.addr = amo_read_modify_write_in_progress? amo_addr : word_addr;
+    assign local_mem.addr = (|amo_read_modify_write_in_progress)? amo_addr : word_addr;
     assign unit.data_out = local_mem.data_out;
-    assign unit.ready = !amo_read_modify_write_in_progress;
+    assign unit.ready = amo_read_modify_write_in_progress == '0;
 
     always_ff @ (posedge clk) begin
         if (rst)
             unit.data_valid <= 0;
         else
-            unit.data_valid <= unit.new_request && (unit.re || amo.is_rmw);
+            unit.data_valid <= unit.new_request && unit.re; // do not mark data_valid when we received amo_rmw without rs bit. That means, the load part was optimized away
     end
 
 endmodule

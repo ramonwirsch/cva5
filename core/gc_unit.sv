@@ -60,7 +60,7 @@ module gc_unit
 
         //CSR Interrupts
         input logic interrupt_pending,
-        output logic interrupt_taken,
+        output logic interrupt_take,
         output logic interrupt_pc_capture,
 
         input logic processing_csr,
@@ -70,7 +70,8 @@ module gc_unit
 
         //Ordering support
         input load_store_status_t load_store_status,
-        input logic [LOG2_MAX_IDS:0] post_issue_count
+        input logic [LOG2_MAX_IDS:0] post_issue_count,
+        input logic [LOG2_MAX_IDS:0] post_commit_count
     );
 
     //Largest depth for TLBs
@@ -94,7 +95,8 @@ module gc_unit
     //    flush fetch, hold until oldest instruction
 
     //Interrupt
-    //wait until issue/execute exceptions are no longer possible, flush fetch, take exception
+    //Let already issued instructions finish, as they could have had side-effects that cannot be reverted/suppressed.
+    //If interrupt_pending is deasserted, or any already issued instruction fails, abort. Take interrupt if not aborted. Potentially start fetching mtvec immediately
 
     //Fetch Exception (TLB and MMU) (fetch stage)
     //flush fetch, wait until issue/execute exceptions are no longer possible, take exception.  If decode stage or later exception occurs first, exception is overridden
@@ -111,7 +113,11 @@ module gc_unit
     //LS exceptions (miss-aligned, TLB and MMU) (issue stage)
     //fetch flush, take exception. If execute or later exception occurs first, exception is overridden
 
-    typedef enum {RST_STATE, PRE_CLEAR_STATE, INIT_CLEAR_STATE, IDLE_STATE, TLB_CLEAR_STATE, POST_ISSUE_DRAIN, PRE_ISSUE_FLUSH, POST_ISSUE_DISCARD} gc_state;
+    typedef enum {
+        RST_STATE, PRE_CLEAR_STATE, INIT_CLEAR_STATE, IDLE_STATE, TLB_CLEAR_STATE,
+        EXC_POST_ISSUE_DRAIN, EXC_PRE_ISSUE_FLUSH, EXC_POST_ISSUE_DISCARD,
+        INTR_PREFETCH_AND_DRAIN, INTR_POST_ISSUE_DRAIN, INTR_TAKE
+    } gc_state;
     gc_state state;
     gc_state next_state;
 
@@ -122,17 +128,16 @@ module gc_unit
     logic post_issue_idle;
     logic ifence_in_progress;
     logic ret_in_progress;
-    logic interrupt_requested;
 
     //GC registered global outputs
     logic gc_init_clear;
     logic gc_fetch_hold;
     logic gc_issue_hold;
     logic gc_fetch_flush;
-    logic gc_writeback_supress;
+    logic gc_writeback_suppress;
     logic gc_retire_hold;
     logic gc_tlb_flush;
-    logic gc_sq_flush;
+    logic gc_memq_flush;
     logic gc_pc_override;
     logic [31:0] gc_pc;
 
@@ -149,7 +154,7 @@ module gc_unit
         if (rst)
             ret_in_progress <= 0;
         else
-            ret_in_progress <= (ret_in_progress & ~(next_state == PRE_ISSUE_FLUSH)) | (issue.new_request & (gc_inputs.is_mret | gc_inputs.is_sret));
+            ret_in_progress <= (ret_in_progress & ~(next_state == EXC_PRE_ISSUE_FLUSH)) | (issue.new_request & (gc_inputs.is_mret | gc_inputs.is_sret));
     end
 
     //ifence
@@ -157,44 +162,38 @@ module gc_unit
         if (rst)
             ifence_in_progress <= 0;
         else
-            ifence_in_progress <= (ifence_in_progress & ~(next_state == PRE_ISSUE_FLUSH)) | (issue.new_request & gc_inputs.is_ifence);
+            ifence_in_progress <= (ifence_in_progress & ~(next_state == EXC_PRE_ISSUE_FLUSH)) | (issue.new_request & gc_inputs.is_ifence);
     end
 
     ////////////////////////////////////////////////////
     //GC Operation
-    assign post_issue_idle = (post_issue_count == 0) & load_store_status.sq_empty;
-    assign gc.fetch_flush = branch_flush | gc_pc_override;
+    assign post_issue_idle = (post_issue_count == 0) & load_store_status.sq_empty; //TODO why wait for sq_empty? Everything that can be in there should also be counted into post_issue_count or it was lost and cannot retire ever
+    assign gc.fetch_flush = branch_flush | gc_pc_override; // branch_flush is guaranteed to occurr in 1 cycle, so it is impossible for any op to be issued after the branch that now needs to be suppressed
 
     always_ff @ (posedge clk) begin
-        gc_fetch_hold <= next_state inside {PRE_CLEAR_STATE, INIT_CLEAR_STATE, POST_ISSUE_DRAIN, PRE_ISSUE_FLUSH};
-        gc_issue_hold <= processing_csr | (next_state inside {PRE_CLEAR_STATE, INIT_CLEAR_STATE, TLB_CLEAR_STATE, POST_ISSUE_DRAIN, PRE_ISSUE_FLUSH, POST_ISSUE_DISCARD});
-        gc_writeback_supress <= next_state inside {PRE_CLEAR_STATE, INIT_CLEAR_STATE, POST_ISSUE_DISCARD};
-        gc_retire_hold <= next_state inside {PRE_ISSUE_FLUSH} && !processing_csr;
+        gc_fetch_hold <= next_state inside {PRE_CLEAR_STATE, INIT_CLEAR_STATE, EXC_POST_ISSUE_DRAIN, INTR_PREFETCH_AND_DRAIN, INTR_POST_ISSUE_DRAIN, EXC_PRE_ISSUE_FLUSH};
+        gc_issue_hold <= processing_csr | (next_state inside {PRE_CLEAR_STATE, INIT_CLEAR_STATE, TLB_CLEAR_STATE, EXC_POST_ISSUE_DRAIN, INTR_PREFETCH_AND_DRAIN, INTR_POST_ISSUE_DRAIN, EXC_PRE_ISSUE_FLUSH, INTR_TAKE, EXC_POST_ISSUE_DISCARD});
+        gc_writeback_suppress <= next_state inside {PRE_CLEAR_STATE, INIT_CLEAR_STATE, EXC_POST_ISSUE_DISCARD};
+        gc_retire_hold <= next_state inside {EXC_PRE_ISSUE_FLUSH, INTR_TAKE} && !processing_csr;
         gc_init_clear <= next_state inside {INIT_CLEAR_STATE};
         gc_tlb_flush <= next_state inside {INIT_CLEAR_STATE, TLB_CLEAR_STATE};
-        gc_sq_flush <= state inside {POST_ISSUE_DISCARD} & next_state inside {IDLE_STATE};
+        gc_memq_flush <= state inside {EXC_POST_ISSUE_DISCARD} & next_state inside {IDLE_STATE};
     end
     //work-around for verilator BLKANDNBLK signal optimizations
     assign gc.fetch_hold = gc_fetch_hold;
     assign gc.issue_hold = gc_issue_hold;
-    assign gc.writeback_supress = CONFIG.INCLUDE_M_MODE & gc_writeback_supress;
+    assign gc.writeback_suppress = CONFIG.INCLUDE_M_MODE & gc_writeback_suppress;
     assign gc.retire_hold = gc_retire_hold;
     assign gc.init_clear = gc_init_clear;
     assign gc.tlb_flush = CONFIG.INCLUDE_S_MODE & gc_tlb_flush;
-    assign gc.sq_flush = CONFIG.INCLUDE_M_MODE & gc_sq_flush;
+    assign gc.memq_flush = CONFIG.INCLUDE_M_MODE & gc_memq_flush;
     ////////////////////////////////////////////////////
     //GC State Machine
     always @(posedge clk) begin
         if (rst) begin
             state <= RST_STATE;
-            interrupt_requested <= 0;
         end else begin
             state <= next_state;
-            if (interrupt_pending) begin
-                interrupt_requested <= 1;
-            end else if (interrupt_requested && interrupt_pc_capture) begin
-                interrupt_requested <= 0;
-            end
         end
     end
 
@@ -205,15 +204,46 @@ module gc_unit
             PRE_CLEAR_STATE : next_state = INIT_CLEAR_STATE;
             INIT_CLEAR_STATE : if (init_clear_done) next_state = IDLE_STATE;
             IDLE_STATE : begin
-                if (gc.exception.valid || (interrupt_pending && !processing_csr)) //new pending exception is also oldest instruction // DO NOT INTERRUPT CSR WRITES, CSR-State is not rolled back if we flush the pipeline, so they need to retire, if we issued
-                    next_state = PRE_ISSUE_FLUSH;
+                if (gc.exception.valid) //exception valid, skipping pending -> new pending exception is also oldest instruction
+                    next_state = EXC_PRE_ISSUE_FLUSH;
+                else if (interrupt_pending)
+                    next_state = INTR_PREFETCH_AND_DRAIN;
                 else if (issue.new_request || gc.exception_pending)
-                    next_state = POST_ISSUE_DRAIN;
+                    next_state = EXC_POST_ISSUE_DRAIN;
             end
             TLB_CLEAR_STATE : if (tlb_clear_done) next_state = IDLE_STATE;
-            POST_ISSUE_DRAIN : if (((ifence_in_progress | ret_in_progress) & post_issue_idle) | gc.exception.valid | interrupt_pending) next_state = PRE_ISSUE_FLUSH;
-            PRE_ISSUE_FLUSH : next_state = POST_ISSUE_DISCARD;
-            POST_ISSUE_DISCARD : if ((post_issue_count == 0) & load_store_status.no_released_stores_pending) next_state = IDLE_STATE;
+            EXC_POST_ISSUE_DRAIN : begin
+                if (((ifence_in_progress | ret_in_progress) & post_issue_idle) | gc.exception.valid)
+                    next_state = EXC_PRE_ISSUE_FLUSH;
+                else if (interrupt_pending && !gc.exception_pending) // only under WFI. Not to be combined with INTR_ as that needs to abort when no interrupt_pending is asserted, where this would bug WFI
+                    next_state = post_issue_idle? INTR_TAKE : INTR_POST_ISSUE_DRAIN;
+            end
+            EXC_PRE_ISSUE_FLUSH : next_state = EXC_POST_ISSUE_DISCARD;
+            EXC_POST_ISSUE_DISCARD : if ((post_issue_count == 0) & load_store_status.no_commited_ops_pending) next_state = IDLE_STATE;
+            INTR_PREFETCH_AND_DRAIN : begin // currently without function, as we then cannot rely on next_retiring_pc to actually be what MEPC needs to be.
+                //TODO we can easily flush to mtvec early by using this state instead of INTR_TAKE in gc_pc_override. But then we need to capture pc_table[oldest_pre_issue_id] or branch_flush_pc into MEPC (and I am not 100% confident this does not miss some edge case)
+                if (post_issue_idle)
+                    next_state = INTR_TAKE;
+                else if (gc.exception.valid) //abort interrupt, switch to exception
+                    next_state = EXC_PRE_ISSUE_FLUSH;
+                else if (gc.exception_pending) //abort interrupt, switch to exception
+                    next_state = EXC_POST_ISSUE_DRAIN;
+                else if (!interrupt_pending) // abort interrupt
+                    next_state = IDLE_STATE;
+                else
+                    next_state = INTR_POST_ISSUE_DRAIN;
+            end
+            INTR_POST_ISSUE_DRAIN : begin
+                if (post_issue_idle)
+                    next_state = INTR_TAKE;
+                else if (gc.exception.valid) //abort interrupt, switch to exception
+                    next_state = EXC_PRE_ISSUE_FLUSH;
+                else if (gc.exception_pending) //abort interrupt, switch to exception
+                    next_state = EXC_POST_ISSUE_DRAIN;
+                else if (!interrupt_pending) // abort interrupt
+                    next_state = IDLE_STATE;
+            end
+            INTR_TAKE : next_state = IDLE_STATE;
             default : next_state = RST_STATE;
         endcase
     end
@@ -261,41 +291,26 @@ module gc_unit
 
         assign exception_ack = gc.exception.valid;
 
-        assign interrupt_taken = (interrupt_pending || interrupt_requested) && (next_state == PRE_ISSUE_FLUSH) && !(ifence_in_progress || ret_in_progress || gc.exception.valid);
-        logic interrupt_pc_capture_precondition;
-        assign interrupt_pc_capture_precondition = state == PRE_ISSUE_FLUSH && interrupt_requested;
-        logic delayed_interrupt_capture;
+        assign interrupt_take = next_state == INTR_TAKE;
+        assign interrupt_pc_capture = interrupt_take;
 
-        always_ff @(posedge clk) begin
-            if (rst)
-                delayed_interrupt_capture <= 0;
-            else if (interrupt_pc_capture_precondition && next_retiring_pc_invalid)
-                delayed_interrupt_capture <= 1; // if the next_retiring_pc will next cycle, when it would be captured at the earliest already have made unrevertible changes, we must not capture it, but the one after it
-                // but do not do this delay for branches currently being commited, as that would capture the "not-taken" insn after the branch
-                // alternatively: we could write special code to capture the resolved branch target in that case, which would be more efficient, but also more difficult to get 100% correct
-                // TODO check how this interacts with other state changes like CSR-writes
-            else if (!next_retiring_pc_invalid)
-                delayed_interrupt_capture <= 0;
-        end
-        assign interrupt_pc_capture = (interrupt_pc_capture_precondition || delayed_interrupt_capture)  && !next_retiring_pc_invalid;
-
-        assign mret = gc_inputs_r.is_mret & ret_in_progress & (next_state == PRE_ISSUE_FLUSH);
-        assign sret = gc_inputs_r.is_sret & ret_in_progress & (next_state == PRE_ISSUE_FLUSH);
+        assign mret = gc_inputs_r.is_mret & ret_in_progress & (next_state == EXC_PRE_ISSUE_FLUSH);
+        assign sret = gc_inputs_r.is_sret & ret_in_progress & (next_state == EXC_PRE_ISSUE_FLUSH);
 
     end else begin
-        assign interrupt_taken = 0;
+        assign interrupt_take = 0;
         assign interrupt_pc_capture = 0;
     end endgenerate
 
-    //PC determination (trap, flush or return)
+    //PC determination (trap, interrupt, flush or return)
     //Two cycles: on first cycle the processor front end is flushed,
     //on the second cycle the new PC is fetched
     generate if (CONFIG.INCLUDE_M_MODE || CONFIG.INCLUDE_IFENCE) begin :gen_gc_pc_override
 
         always_ff @ (posedge clk) begin
-            gc_pc_override <= next_state inside { INIT_CLEAR_STATE, PRE_ISSUE_FLUSH };
+            gc_pc_override <= next_state inside { INIT_CLEAR_STATE, EXC_PRE_ISSUE_FLUSH, INTR_TAKE};
             gc_pc <=
-                            (gc.exception.valid | interrupt_taken) ? exception_target_pc :
+                            (gc.exception.valid || next_state == INTR_TAKE) ? exception_target_pc :
                             (gc_inputs_r.is_ifence) ? gc_inputs_r.pc_p4 :
                             epc; //ret
         end
@@ -303,6 +318,8 @@ module gc_unit
         assign gc.pc_override = gc_pc_override;
         assign gc.pc = gc_pc;
 
+    end else begin
+        assign gc.pc_override = 0;
     end endgenerate
     ////////////////////////////////////////////////////
     //Decode / Write-back Handshaking

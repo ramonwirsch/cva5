@@ -249,6 +249,27 @@ interface store_queue_interface;
     );
 endinterface
 
+interface memory_commit_interface;
+    import cva5_config::*;
+    import riscv_types::*;
+    import cva5_types::*;
+
+    id_t committed_id;
+    logic committed;
+
+    id_t committable_ids [RETIRE_PORTS];
+    logic committable [RETIRE_PORTS];
+
+    modport ls (
+        input committable_ids, committable,
+        output committed_id, committed
+    );
+    modport state (
+        output committable_ids, committable,
+        input committed_id, committed
+    );
+endinterface
+
 interface writeback_store_interface;
     import riscv_types::*;
     import cva5_types::*;

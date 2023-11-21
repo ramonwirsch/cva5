@@ -63,6 +63,7 @@ module instruction_metadata_and_id_management
         input issue_packet_t issue,
         input logic instruction_issued,
         input logic instruction_issued_with_rd,
+        input logic instruction_issued_with_late_result_commit,
 
         //WB
         input wb_packet_t wb_packet [RF_CONFIG.TOTAL_WB_GROUP_COUNT],
@@ -73,16 +74,12 @@ module instruction_metadata_and_id_management
         output id_t retire_ids [RETIRE_PORTS],
         output id_t retire_ids_next [RETIRE_PORTS],
         output logic retire_port_valid [RETIRE_PORTS],
-        /*
-          matched to retire_ids, same as retire_port_valid, but will ignore, whether there is an outstanding writeback.
-          Ops without side-effects / only RF writes need not wait for retiring in order to write to RF. Since we rename registers we can simply ignore them / rollback renamer state if op is never actually retired.
-          But memStores and other side-effects can only committed, when controlflow is guaranteed to reach it (i.e. when the previous op was retired)
-          Should be identical to retire_port_valid for memStores / anything that does not use rd. Only relevant if the ID in question is an op that has a side-effect outside of the RF (memory stores)
-        */
-        output logic id_with_sideffect_committed [RETIRE_PORTS],
+        
+        memory_commit_interface.state mem_commit,
 
         //CSR
         output logic [LOG2_MAX_IDS:0] post_issue_count,
+        output logic [LOG2_MAX_IDS:0] post_commit_count,
         //Exception
         output logic [31:0] next_retiring_pc,
         output logic next_retiring_pc_invalid,
@@ -95,12 +92,14 @@ module instruction_metadata_and_id_management
 
     (* ramstyle = "MLAB, no_rw_check" *) phys_addr_t phys_addr_table [MAX_IDS];
     (* ramstyle = "MLAB, no_rw_check" *) logic [0:0] uses_rd_table [MAX_IDS];
+    (* ramstyle = "MLAB, no_rw_check" *) logic [0:0] has_late_result_commit_table [MAX_IDS];
 
     (* ramstyle = "MLAB, no_rw_check" *) logic [$bits(fetch_metadata_t)-1:0] fetch_metadata_table [MAX_IDS];
 
     (* ramstyle = "MLAB, no_rw_check" *) logic [$bits(exception_sources_t)-1:0] exception_unit_table [MAX_IDS];
 
     id_t decode_id;
+    id_t issued_id;
     id_t oldest_pre_issue_id;
 
     localparam ID_COUNTER_W = LOG2_MAX_IDS+1;
@@ -108,11 +107,14 @@ module instruction_metadata_and_id_management
     logic [LOG2_MAX_IDS:0] pre_issue_count;
     logic [LOG2_MAX_IDS:0] pre_issue_count_next;
     logic [LOG2_MAX_IDS:0] post_issue_count_next;
+    logic [LOG2_MAX_IDS:0] post_commit_count_next;
     logic [LOG2_MAX_IDS:0] inflight_count;
 
     retire_packet_t retire_next;
     logic retire_port_valid_next [RETIRE_PORTS];
-    logic id_with_sideffect_committed_next [RETIRE_PORTS];
+    logic id_with_sideffect_committable_next [RETIRE_PORTS];
+    logic precommit_suppress;
+    logic post_commit_retire;
 
     genvar i;
     ////////////////////////////////////////////////////
@@ -157,6 +159,11 @@ module instruction_metadata_and_id_management
     always_ff @ (posedge clk) begin
         if (decode_advance)
             uses_rd_table[decode_id] <= (decode_uses_rd_gp && |decode_rd_addr) || decode_uses_rd_fp;
+    end
+
+    always_ff @ (posedge clk) begin
+        if (instruction_issued)
+            has_late_result_commit_table[issue.id] <= instruction_issued_with_late_result_commit;
     end
 
     ////////////////////////////////////////////////////
@@ -236,6 +243,15 @@ module instruction_metadata_and_id_management
             post_issue_count <= post_issue_count_next;
     end
 
+    assign post_commit_count_next = post_commit_count + ID_COUNTER_W'(mem_commit.committed) - ID_COUNTER_W'(post_commit_retire);
+
+    always_ff @(posedge clk) begin
+        if (rst)
+            post_commit_count <= 0;
+        else
+            post_commit_count <= post_commit_count_next;
+    end
+
     always_ff @ (posedge clk) begin
         if (gc.fetch_flush)
             inflight_count <= post_issue_count_next;
@@ -247,15 +263,14 @@ module instruction_metadata_and_id_management
     //ID in-use determination
     logic id_waiting_for_writeback [RETIRE_PORTS];
     //WB group zero is not included as it completes within a single cycle
-    //Non-writeback instructions not included as current instruction set
-    //complete in their first cycle of the execute stage, or do not cause an
-    //exception after that point
+    // Need to await instruction actually completing to retire the insn, because technically, exceptions can occurr up until this point
+    // Ops that do not have a result can only throw exceptions early, when they would have had no chance to retire already
 
     id_t inflight_notify_addrs [RF_CONFIG.TOTAL_WB_GROUP_COUNT];
     logic inflight_notify [RF_CONFIG.TOTAL_WB_GROUP_COUNT];
 
     assign inflight_notify_addrs[0] = issue.id;
-    assign inflight_notify[0] = (instruction_issued_with_rd & issue.is_multicycle);
+    assign inflight_notify[0] = instruction_issued_with_rd && issue.is_multicycle;
 
     generate for (i=1; i < RF_CONFIG.TOTAL_WB_GROUP_COUNT; i++) begin : gen_inflight_toggle
         assign inflight_notify_addrs[i] = wb_packet[i].id;
@@ -280,15 +295,43 @@ module instruction_metadata_and_id_management
     );
 
     ////////////////////////////////////////////////////
+    // late result commit
+    // Ops, like Memory Loads that may have destructive side effects cannot be reverted after they have been committed. They must not be suppressed after that point, as that would loose state (looking at you interrupts)
+    // But they may not commit immediately after issueing (there is a queue and we may also wait for the op to be front-of-the-line for retiring, because only then is it ensured that no controlflow will divert from it)
+    // This bit is set, while the op is still uncommitted and no waiting_for_writeback state is set
+    // at the same time as this bit is cleared, either by aborting or committing, the waiting_for_writeback must be decided
+    // ops
+    logic id_uncommitted [RETIRE_PORTS];
+
+    toggle_memory_set #(
+        .DEPTH (MAX_IDS),
+        .NUM_WRITE_PORTS (3), // 1 to mark as uncommitted on issue, 1 to mark as committed by ls_unit, 1 to mark to clear in case we abort prior to commit
+        .NUM_READ_PORTS (RETIRE_PORTS),
+        .WRITE_INDEX_FOR_RESET (0),
+        .READ_INDEX_FOR_RESET (0)
+    ) id_uncommitted_toggle_mem_set (
+        .clk (clk),
+        .rst (rst),
+        .init_clear (gc.init_clear),
+        .toggle ('{instruction_issued_with_late_result_commit, mem_commit.committed, precommit_suppress}),
+        .toggle_addr ('{issue.id, mem_commit.committed_id, retire_ids_next[phys_id_sel]}),
+        .read_addr (retire_ids_next),
+        .in_use (id_uncommitted)
+    );
+
+
+    ////////////////////////////////////////////////////
     //Retirer
     logic contiguous_retire;
     logic id_is_post_issue [RETIRE_PORTS];
     logic id_ready_to_retire [RETIRE_PORTS];
+    logic retire_id_has_late_result_commit [RETIRE_PORTS];
     logic [LOG2_RETIRE_PORTS-1:0] phys_id_sel;
     logic [RETIRE_PORTS-1:0] retire_id_uses_rd;
 
      generate for (i = 0; i < RETIRE_PORTS; i++) begin : gen_retire_writeback
         assign retire_id_uses_rd[i] = uses_rd_table[retire_ids_next[i]];
+        assign retire_id_has_late_result_commit[i] = has_late_result_commit_table[retire_ids_next[i]];
      end endgenerate
 
     //Supports retiring up to RETIRE_PORTS instructions.  The retired block of instructions must be
@@ -297,18 +340,28 @@ module instruction_metadata_and_id_management
     //If an exception is pending, only retire a single intrustuction per cycle.  As such, the pending
     //exception will have to become the oldest instruction retire_ids[0] before it can retire.
     logic retire_with_rd_found;
+    logic suppress_retire_id [RETIRE_PORTS];
+    logic post_commit_retires [RETIRE_PORTS];
+    logic late_result_committable [RETIRE_PORTS];
     always_comb begin
-        contiguous_retire = ~gc.retire_hold;
+        contiguous_retire = 1;
         retire_with_rd_found = 0;
+        post_commit_retire = 0;
         for (int i = 0; i < RETIRE_PORTS; i++) begin
             id_is_post_issue[i] = post_issue_count > ID_COUNTER_W'(i);
 
-            id_ready_to_retire[i] = id_is_post_issue[i] && ~(retire_id_uses_rd[i] && retire_with_rd_found) && contiguous_retire;
-            retire_port_valid_next[i] = id_ready_to_retire[i] && ~id_waiting_for_writeback[i];
-            id_with_sideffect_committed_next[i] = id_ready_to_retire[i]; // not enough to know it can be committed. ls_unit expects it only after forwarded_stores could have been stored. i.e. all previous ops must have been retired
+            id_ready_to_retire[i] = id_is_post_issue[i] && (!retire_id_uses_rd[i] || !retire_with_rd_found) && contiguous_retire && ~gc.retire_hold;
+            retire_port_valid_next[i] = id_ready_to_retire[i] && ~id_waiting_for_writeback[i] && (!retire_id_has_late_result_commit[i] || !id_uncommitted[i]);
+            late_result_committable[i] = retire_id_has_late_result_commit[i] && id_ready_to_retire[i] && ~gc.writeback_suppress && id_uncommitted[i]; // when it is in the front of the line for retiring, then we know, no other controlflow/exceptions etc can happen and it safe to commit destructive memory ops (stores, peri-loads)
+            //TODO probably need another signal to tell ls_unit that it needs to release the op to clear inflight-lock in RF without actually changing memory contents
+            id_with_sideffect_committable_next[i] = late_result_committable[i] || retire_port_valid_next[i];
+
+            suppress_retire_id[i] = retire_id_has_late_result_commit[i] && id_ready_to_retire[i] && gc.writeback_suppress && id_uncommitted[i]; // we can only abort 1 uncommitted per cycle. id_uncommitted implies late_result_commit, which implies uses_rd, which means retire_port_valid_next will only true for 1 port
+            post_commit_retires[i] = retire_id_has_late_result_commit[i] && retire_port_valid_next[i] && !id_uncommitted[i];
      
             retire_with_rd_found |= retire_port_valid_next[i] & retire_id_uses_rd[i];
             contiguous_retire &= retire_port_valid_next[i] & ~gc.exception_pending;
+            post_commit_retire |= post_commit_retires[i];
         end
     end
 
@@ -320,6 +373,7 @@ module instruction_metadata_and_id_management
     );
     assign retire_next.phys_id = retire_ids_next[phys_id_sel];
     assign retire_next.valid = retire_with_rd_found;
+    assign precommit_suppress = suppress_retire_id[phys_id_sel];
 
     always_comb begin
         retire_next.count = 0;
@@ -331,12 +385,14 @@ module instruction_metadata_and_id_management
     always_ff @ (posedge clk) begin
         retire.valid <= retire_next.valid;
         retire.phys_id <= retire_next.phys_id;
-        retire.count <= gc.writeback_supress ? '0 : retire_next.count;
+        retire.count <= gc.writeback_suppress ? '0 : retire_next.count;
         for (int i = 0; i < RETIRE_PORTS; i++) begin
-            retire_port_valid[i] <= retire_port_valid_next[i] & ~gc.writeback_supress;
-            id_with_sideffect_committed[i] <= id_with_sideffect_committed_next[i] & ~gc.writeback_supress;
+            retire_port_valid[i] <= retire_port_valid_next[i] & ~gc.writeback_suppress;
+            mem_commit.committable[i] <= id_with_sideffect_committable_next[i];
         end
     end
+
+    assign mem_commit.committable_ids = retire_ids;
 
     ////////////////////////////////////////////////////
     //Outputs

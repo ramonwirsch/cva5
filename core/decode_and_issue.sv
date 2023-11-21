@@ -56,6 +56,7 @@ module decode_and_issue
 
         output logic instruction_issued,
         output logic instruction_issued_with_rd,
+        output logic instruction_issued_with_late_result_commit,
         output issue_packet_t issue,
 
         //Register File
@@ -463,6 +464,7 @@ module decode_and_issue
     assign ls_inputs.forwarded_store = (is_float_r && is_store_r)? fp_rf.inuse[RS2] : gp_rf.inuse[RSG2];
     assign ls_inputs.store_forward_id = rd_to_id_table[issue_rs_addr[RS2][RELEVANT_RD_BITS-1:0]]; // RS-bits in insn are identical for GP & FP
     assign ls_inputs.amo = amo_inputs_r;
+    assign instruction_issued_with_late_result_commit = instruction_issued_with_rd && is_load_r;
 
     ////////////////////////////////////////////////////
     //Branch unit inputs
@@ -616,7 +618,7 @@ module decode_and_issue
         set_clr_reg_with_rst #(.SET_OVER_CLR(1), .WIDTH(1), .RST_VALUE(0)) prev_div_result_valid_m (
             .clk, .rst,
             .set(instruction_issued & unit_needed_issue_stage[UNIT_IDS.DIV]),
-            .clr((instruction_issued & issue.uses_rd & !issue.rd_addr.isFloat & div_rs_overwrite) | gc.writeback_supress), //No instructions will be issued while gc.writeback_supress is asserted
+            .clr((instruction_issued & issue.uses_rd & !issue.rd_addr.isFloat & div_rs_overwrite) | gc.writeback_suppress), //No instructions will be issued while gc.writeback_suppress is asserted
             .result(prev_div_result_valid)
         );
 

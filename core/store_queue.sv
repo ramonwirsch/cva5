@@ -49,9 +49,8 @@ module store_queue
         //Writeback snooping
         input wb_packet_t wb_snoop [RF_CONFIG.TOTAL_WB_GROUP_COUNT-1], // port0 ignored, writes immediately
 
-        //Retire
-        input id_t retire_ids [RETIRE_PORTS],
-        input logic id_with_sideffect_committed [RETIRE_PORTS]
+        // interface to id_unit for committing of memory ops and tracking
+        memory_commit_interface.ls mem_commit
     );
 
     localparam LOG2_SQ_DEPTH = $clog2(CONFIG.SQ_DEPTH);
@@ -129,15 +128,16 @@ module store_queue
     //SQ attributes and issue data
     assign sq_entry_in = '{ // TODO: if we need 1 cycle for converting FP->IEEE, then override FP-stores as forwarded-stores and convert there (already reg (wb_packet_r) -> reg(forwarded_data))
         addr : sq.data_in.addr,
-        be : sq.data_in.be,
+        be : (sq.data_in.store)? sq.data_in.be : 4'b0,
         fn3 : sq.data_in.fn3,
         is_float : sq.data_in.is_float,
         forwarded_store : sq.data_in.forwarded_store,
         data : sq_in_data_processed,
+        subunit_id : sq.data_in.subunit_id,
         is_amo_sc : sq.data_in.amo.is_sc,
         is_amo_rmw : sq.data_in.amo.is_rmw,
         amo_op : sq.data_in.amo.op,
-        has_paired_amo_write : sq.data_in.amo.is_rmw && sq.data_in.load
+        has_paired_load : sq.data_in.load
     };
     always_ff @ (posedge clk) begin
         if (sq.push)
@@ -207,8 +207,8 @@ module store_queue
     always_comb begin
         newly_released = '0;
         for (int i = 0; i < RETIRE_PORTS; i++) begin
-            store_released_index[i] = sq_ids[retire_ids[i]];
-            store_released[i] = {1'b1, ids[store_released_index[i]]} == {id_with_sideffect_committed[i], retire_ids[i]};
+            store_released_index[i] = sq_ids[mem_commit.committable_ids[i]];
+            store_released[i] = {1'b1, ids[store_released_index[i]]} == {mem_commit.committable[i], mem_commit.committable_ids[i]};
             newly_released |= (CONFIG.SQ_DEPTH'(store_released[i]) << store_released_index[i]);
         end
     end
@@ -284,7 +284,7 @@ module store_queue
     //Store Transaction Outputs
     logic [31:0] data_for_alignment;
     logic [31:0] sq_data;
-    sq_entry_t output_entry;    
+    sq_entry_t output_entry;
     assign output_entry = sq_entry[sq_oldest];
 
     always_comb begin
@@ -311,10 +311,11 @@ module store_queue
         is_float : output_entry.is_float,
         forwarded_store : output_entry.forwarded_store,
         data : sq_data,
+        subunit_id : output_entry.subunit_id,
         is_amo_sc : output_entry.is_amo_sc,
         is_amo_rmw : output_entry.is_amo_rmw,
         amo_op : output_entry.amo_op,
-        has_paired_amo_write : output_entry.has_paired_amo_write
+        has_paired_load : output_entry.has_paired_load
     };
 
     ////////////////////////////////////////////////////

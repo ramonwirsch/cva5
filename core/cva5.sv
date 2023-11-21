@@ -155,9 +155,6 @@ module cva5
 
     unit_issue_interface unit_issue [NUM_UNITS-1:0]();
 
-    exception_packet_t  ls_exception;
-    logic ls_exception_is_store;
-
     unit_writeback_interface #(
         .RESULT_WIDTH(MAX_POSSIBLE_REG_BITS)
     ) unit_wb [NUM_WB_UNITS] ();
@@ -197,9 +194,9 @@ module cva5
         //ID freeing
     retire_packet_t retire;
     id_t retire_ids [RETIRE_PORTS];
-    id_t retire_ids_next [RETIRE_PORTS];
     logic retire_port_valid [RETIRE_PORTS];
-    logic id_with_sideffect_committed [RETIRE_PORTS];
+    id_t retire_ids_next [RETIRE_PORTS];
+    memory_commit_interface mem_commit();
         //Writeback
     wb_packet_t wb_packet [RF_CONFIG.TOTAL_WB_GROUP_COUNT];
     commit_packet_t commit_packet [RF_CONFIG.TOTAL_WB_GROUP_COUNT];
@@ -218,6 +215,7 @@ module cva5
     gc_outputs_t gc;
     load_store_status_t load_store_status;
     logic [LOG2_MAX_IDS:0] post_issue_count;
+    logic [LOG2_MAX_IDS:0] post_commit_count;
 
     logic [1:0] current_privilege;
     logic mret;
@@ -225,7 +223,7 @@ module cva5
     logic [31:0] epc;
     logic [31:0] exception_target_pc;
 
-    logic interrupt_taken;
+    logic interrupt_take;
     logic interrupt_pc_capture;
     logic interrupt_pending;
 
@@ -235,6 +233,7 @@ module cva5
     logic illegal_instruction;
     logic instruction_issued;
     logic instruction_issued_with_rd;
+    logic instruction_issued_with_late_result_commit;
 
     //LS
     wb_packet_t wb_snoop [RF_CONFIG.TOTAL_WB_GROUP_COUNT-1]; // port0 not needed
@@ -335,14 +334,16 @@ module cva5
         .issue (issue),
         .instruction_issued (instruction_issued),
         .instruction_issued_with_rd (instruction_issued_with_rd),
+        .instruction_issued_with_late_result_commit(instruction_issued_with_late_result_commit),
         .wb_packet (wb_packet),
         .commit_packet (commit_packet),
         .retire (retire),
         .retire_ids (retire_ids),
-        .retire_ids_next (retire_ids_next),
         .retire_port_valid (retire_port_valid),
-        .id_with_sideffect_committed(id_with_sideffect_committed),
+        .retire_ids_next (retire_ids_next),
+        .mem_commit(mem_commit),
         .post_issue_count(post_issue_count),
+        .post_commit_count(post_commit_count),
         .next_retiring_pc(next_retiring_pc),
         .next_retiring_pc_invalid(next_retiring_pc_invalid),
         .current_exception_unit (current_exception_unit)
@@ -470,6 +471,7 @@ module cva5
         .decode_rs_wb_group (decode_rs_wb_group),
         .instruction_issued (instruction_issued),
         .instruction_issued_with_rd (instruction_issued_with_rd),
+        .instruction_issued_with_late_result_commit(instruction_issued_with_late_result_commit),
         .issue (issue),
         .gp_rf (gp_rf_issue),
         .fp_rf (fp_rf_issue),
@@ -667,8 +669,7 @@ module cva5
         .dwishbone (dwishbone),                                       
         .data_bram (data_bram),
         .wb_snoop (wb_snoop),
-        .retire_ids (retire_ids),
-        .id_with_sideffect_committed(id_with_sideffect_committed),
+        .mem_commit(mem_commit),
         .exception (exception[LS_EXCEPTION]),
         .load_store_status(load_store_status),
         .wb (unit_wb[UNIT_IDS.LS]),
@@ -728,7 +729,7 @@ module cva5
             .issue (unit_issue[UNIT_IDS.CSR]), 
             .wb (unit_wb[UNIT_IDS.CSR]),
             .current_privilege(current_privilege),
-            .interrupt_taken(interrupt_taken),
+            .interrupt_take(interrupt_take),
             .interrupt_pc_capture(interrupt_pc_capture),
             .interrupt_pending(interrupt_pending),
             .processing_csr(processing_csr),
@@ -771,12 +772,13 @@ module cva5
         .sret(sret),
         .epc(epc),
         .retire_ids_next (retire_ids_next),
-        .interrupt_taken(interrupt_taken),
+        .interrupt_take(interrupt_take),
         .interrupt_pc_capture(interrupt_pc_capture),
         .interrupt_pending(interrupt_pending),
         .processing_csr(processing_csr),
         .load_store_status(load_store_status),
-        .post_issue_count (post_issue_count)
+        .post_issue_count (post_issue_count),
+        .post_commit_count(post_commit_count)
     );
 
     generate if (CONFIG.INCLUDE_MUL) begin : gen_mul

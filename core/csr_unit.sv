@@ -45,7 +45,7 @@ module csr_unit
         output logic [1:0] current_privilege,
 
         //GC
-        input logic interrupt_taken,
+        input logic interrupt_take,
         input logic interrupt_pc_capture,
         output logic interrupt_pending,
         output logic processing_csr,
@@ -247,7 +247,7 @@ generate if (CONFIG.INCLUDE_M_MODE) begin : gen_csr_m_mode
         if (CONFIG.INCLUDE_S_MODE && privilege_level inside {SUPERVISOR_PRIVILEGE, USER_PRIVILEGE}) begin
             if (exception.valid & medeleg[exception.code])
                 exception_privilege_level = SUPERVISOR_PRIVILEGE;
-            if (interrupt_taken & mideleg[interrupt_cause_r])
+            if (interrupt_take & mideleg[interrupt_cause_r])
                 interrupt_privilege_level = SUPERVISOR_PRIVILEGE;
         end
     end
@@ -258,7 +258,7 @@ generate if (CONFIG.INCLUDE_M_MODE) begin : gen_csr_m_mode
     always_comb begin
         if(mret | sret)
             next_privilege_level = trap_return_privilege_level;
-        else if (interrupt_taken)
+        else if (interrupt_take)
             next_privilege_level = interrupt_privilege_level;
         else if (exception.valid)
             next_privilege_level = exception_privilege_level;
@@ -316,7 +316,7 @@ generate if (CONFIG.INCLUDE_M_MODE) begin : gen_csr_m_mode
         mstatus_new = mstatus;
         if (mwrite_en(MSTATUS) | swrite_en(SSTATUS))
             mstatus_new = (mstatus & ~mstatus_write_mask) | (updated_csr & mstatus_write_mask);
-        else if (interrupt_taken | exception.valid)
+        else if (interrupt_take | exception.valid)
             mstatus_new = mstatus_exception;
         else if (mret | sret)
             mstatus_new = mstatus_return;
@@ -502,9 +502,9 @@ generate if (CONFIG.INCLUDE_M_MODE) begin : gen_csr_m_mode
             mcause.is_interrupt <= 0;
             mcause.code <= 0;
         end
-        else if (CONFIG.CSRS.NON_STANDARD_OPTIONS.INCLUDE_MCAUSE & ((mcause_write_valid & mwrite_en(MCAUSE)) | exception.valid | interrupt_taken)) begin
-            mcause.is_interrupt <= interrupt_taken | (mwrite_en(MCAUSE) & updated_csr[XLEN-1]);
-            mcause.code <= interrupt_taken ? interrupt_cause_r : exception.valid ? exception.code : updated_csr[ECODE_W-1:0];
+        else if (CONFIG.CSRS.NON_STANDARD_OPTIONS.INCLUDE_MCAUSE & ((mcause_write_valid & mwrite_en(MCAUSE)) | exception.valid | interrupt_take)) begin
+            mcause.is_interrupt <= interrupt_take | (mwrite_en(MCAUSE) & updated_csr[XLEN-1]);
+            mcause.code <= interrupt_take ? interrupt_cause_r : exception.valid ? exception.code : updated_csr[ECODE_W-1:0];
         end
     end
 
