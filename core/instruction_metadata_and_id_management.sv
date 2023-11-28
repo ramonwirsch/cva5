@@ -302,6 +302,7 @@ module instruction_metadata_and_id_management
     // at the same time as this bit is cleared, either by aborting or committing, the waiting_for_writeback must be decided
     // ops
     logic id_uncommitted [RETIRE_PORTS];
+    logic [LOG2_RETIRE_PORTS-1:0] phys_id_sel;
 
     toggle_memory_set #(
         .DEPTH (MAX_IDS),
@@ -326,7 +327,6 @@ module instruction_metadata_and_id_management
     logic id_is_post_issue [RETIRE_PORTS];
     logic id_ready_to_retire [RETIRE_PORTS];
     logic retire_id_has_late_result_commit [RETIRE_PORTS];
-    logic [LOG2_RETIRE_PORTS-1:0] phys_id_sel;
     logic [RETIRE_PORTS-1:0] retire_id_uses_rd;
 
      generate for (i = 0; i < RETIRE_PORTS; i++) begin : gen_retire_writeback
