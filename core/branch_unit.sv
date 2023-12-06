@@ -38,6 +38,7 @@ module branch_unit
         input branch_inputs_t branch_inputs,
         output branch_results_t br_results,
         output logic branch_flush,
+        output logic branch_pending,
 
         exception_interface.unit exception,
 
@@ -85,6 +86,8 @@ module branch_unit
       .clr(branch_inputs.issue_pc_valid | exception.valid),
       .result(branch_issued_r)
     );
+
+    assign branch_pending = branch_issued_r;
 
     //To determine if the branch was predicted correctly we need to wait until the
     //subsequent instruction has reached the issue stage

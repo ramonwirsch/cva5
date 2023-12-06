@@ -121,6 +121,7 @@ module cva5
     branch_predictor_interface bp();
     branch_results_t br_results;
     logic branch_flush;
+    logic branch_pending;
     logic potential_branch_exception;
     exception_packet_t br_exception;
     logic branch_exception_is_jump;
@@ -582,6 +583,7 @@ module cva5
         .branch_inputs (branch_inputs),
         .br_results (br_results),
         .branch_flush (branch_flush),
+        .branch_pending (branch_pending),
         .exception (exception[BR_EXCEPTION]),
         .tr_branch_correct (tr_branch_correct),
         .tr_branch_misspredict (tr_branch_misspredict),
@@ -762,6 +764,7 @@ module cva5
         .issue (unit_issue[UNIT_IDS.IEC]),
         .gc_inputs (gc_inputs),
         .branch_flush (branch_flush),
+        .branch_pending (branch_pending),
         .exception (exception),
         .exception_target_pc (exception_target_pc),
         .current_exception_unit (current_exception_unit),

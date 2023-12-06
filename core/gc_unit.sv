@@ -41,6 +41,8 @@ module gc_unit
 
         //Branch miss predict
         input logic branch_flush,
+        // branch_unit is waiting on next insn and may cause a branch_flush when that arrives
+        input logic branch_pending,
 
         //exception_interface.unit pre_issue_exception,
 
@@ -167,7 +169,9 @@ module gc_unit
 
     ////////////////////////////////////////////////////
     //GC Operation
-    assign post_issue_idle = (post_issue_count == 0) & load_store_status.sq_empty; //TODO why wait for sq_empty? Everything that can be in there should also be counted into post_issue_count or it was lost and cannot retire ever
+    assign post_issue_idle = (post_issue_count == 0) && load_store_status.sq_empty && !branch_pending;
+    // why wait for sq_empty? Only reason would be all stores retired, but ls_unit still working through them. Can this cause conflicts at this point?
+    // branch_unit will cause branch_flushes if it started a branch/jump. Will only abort on exceptions
     assign gc.fetch_flush = branch_flush | gc_pc_override; // branch_flush is guaranteed to occurr in 1 cycle, so it is impossible for any op to be issued after the branch that now needs to be suppressed
 
     always_ff @ (posedge clk) begin
