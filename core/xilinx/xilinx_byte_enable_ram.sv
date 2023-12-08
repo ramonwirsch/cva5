@@ -22,6 +22,10 @@
 
 module xilinx_byte_enable_ram
 
+    import cva5_config::*;
+    import riscv_types::*;
+    import cva5_types::*;
+
     #(
         parameter LINES = 4096,
         parameter preload_file = "",

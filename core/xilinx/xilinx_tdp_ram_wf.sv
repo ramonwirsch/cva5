@@ -2,6 +2,9 @@
  * True Dual Port Block Ram with WRITE_FIRST mode with line-wide WEs
  */
 
+import cva5_config::*;
+import cva5_types::*;
+
 module xilinx_tdp_ram_wf #(
     parameter C_DATA_WIDTH=32,
     parameter C_DEPTH=512
