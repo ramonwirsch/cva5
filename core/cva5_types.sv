@@ -385,6 +385,7 @@ package cva5_types;
         //Load Store Unit
         logic load_conflict_delay;
         logic ls_is_peri_access;
+        logic memory_stall;
 
         //Register File
         logic rs1_forwarding_needed;

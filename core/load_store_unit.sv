@@ -69,6 +69,7 @@ module load_store_unit
 		// Trace
         output logic tr_load_conflict_delay,
         output logic tr_ls_is_peri_access,
+        output logic tr_memory_stall,
 
         // Instruction Invalidation
         instruction_invalidation_interface.source instr_inv,
@@ -117,10 +118,7 @@ module load_store_unit
 
     logic [31:0] virtual_address;
     logic [31:0] physical_address;
-
-    logic isPeriAddr;
-    logic isLocalAddr;
-    logic isCacheAddr;
+    logic [NUM_SUB_UNITS_W-1:0] input_subunit_id;
 
     logic [31:0] unit_muxed_load_data;
     logic [31:0] aligned_load_data;
@@ -252,7 +250,6 @@ module load_store_unit
 
     ////////////////////////////////////////////////////
     //Load Store Queue
-    logic [NUM_SUB_UNITS_W-1:0] input_subunit_id;
 
     one_hot_to_integer #(NUM_SUB_UNITS+1)
     sub_unit_select (
@@ -564,7 +561,9 @@ module load_store_unit
     //Trace Interface
     generate if (ENABLE_TRACE_INTERFACE) begin : gen_ls_trace
         assign tr_load_conflict_delay = tr_possible_load_conflict_delay & units_ready;
-        assign tr_ls_is_peri_access = CONFIG.INCLUDE_PERIPHERAL_BUS && subunit_id == NUM_SUB_UNITS_W'(BUS_ID);
+        assign tr_ls_is_peri_access = CONFIG.INCLUDE_PERIPHERAL_BUS && input_subunit_id == NUM_SUB_UNITS_W'(BUS_ID);
+        // coarse. triggers whenever dcache is not immediately ready (cannot write or even request load) or takes more than 1 cycle to respond to a load
+        assign tr_memory_stall = CONFIG.INCLUDE_DCACHE && ((load_attributes.valid && wb_attr.subunit_id == NUM_SUB_UNITS_W'(DCACHE_ID) && !unit_data_valid[DCACHE_ID] && !sub_unit_issue) || (lsq.valid && shared_inputs.subunit_id == NUM_SUB_UNITS_W'(DCACHE_ID) && !unit_ready[DCACHE_ID]));
     end
     endgenerate
 

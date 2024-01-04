@@ -92,6 +92,7 @@ static const char * const defaultEventNames[] = {
     "return_misspredict",
     "load_conflict_delay",
     "ls_is_peri_access",
+    "memory_stall",
     "rs1_forwarding_needed",
     "rs2_forwarding_needed",
     "rs1_and_rs2_forwarding_needed",

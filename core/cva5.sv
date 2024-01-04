@@ -281,6 +281,7 @@ module cva5
 
     logic tr_load_conflict_delay;
     logic tr_ls_is_peri_access;
+    logic tr_memory_stall;
 
     logic tr_rs1_forwarding_needed;
     logic tr_rs2_forwarding_needed;
@@ -678,6 +679,7 @@ module cva5
         .wb_fp (ls_unit_fp_wb),
         .tr_load_conflict_delay (tr_load_conflict_delay),
         .tr_ls_is_peri_access(tr_ls_is_peri_access),
+        .tr_memory_stall(tr_memory_stall),
         .instr_inv(instr_inv),
         .instr_inv_en(instr_inv_enabled),
         .instr_inv_stall(instr_inv_stall)
@@ -909,6 +911,7 @@ module cva5
             tr.events.br_is_return <= tr_br_is_return;
             tr.events.br_is_call <= tr_br_is_call;
             tr.events.ls_is_peri_access <= tr_ls_is_peri_access;
+            tr.events.memory_stall <= tr_memory_stall;
             tr.current_privilege <= current_privilege;
             tr.branch_target_pc <= tr_branch_target_pc;
             tr.instruction_pc_dec <= tr_instruction_pc_dec;
