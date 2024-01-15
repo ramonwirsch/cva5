@@ -19,6 +19,7 @@ struct cmdline_options {
 	firmwareLoadingMode_t hwInitMode;
 	int terminateOnUserExit;
 	int stallLimit;
+	bool continousPerfReporting;
 };
 
 void printHelp();

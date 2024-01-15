@@ -19,6 +19,7 @@ void printHelp () {
 		"--trace        set a file for trace output ("
 		TRACE_FORMAT
 		"-format)\n"
+		"--perf         continuous simulator perf reporting\n"
 		"               * The firmware can be set in two ways: either together for Scratch- and RAM-Section together, or via seperate files\n"
 		"--hwInit       set firmware in Scratch- and RAM-Section\n"
 		"--ramInit      set firmware for RAM-Section only\n"
@@ -48,6 +49,7 @@ void handleArguments(int argc, char **argv, struct cmdline_options *opts) {
 			{"scratchInit", required_argument, nullptr, 'i'},
 			{"pcFile", required_argument, nullptr, 'p'},
 			{"memIdx", required_argument, nullptr, 'm'},
+			{"perf", no_argument, nullptr, 'P'},
 			{"terminateOnUserExit", no_argument, &opts->terminateOnUserExit, 1}, // overwrite pointer with 1 if option is given
 			{"stallLimit", required_argument, nullptr, 'S'},
 			{nullptr, no_argument, nullptr, 0}
@@ -65,6 +67,7 @@ void handleArguments(int argc, char **argv, struct cmdline_options *opts) {
 	opts->pcFile = nullptr;
 	opts->terminateOnUserExit = 0;
 	opts->stallLimit = -1;
+	opts->continousPerfReporting = false;
 
 
 	while(true) {
@@ -141,6 +144,9 @@ void handleArguments(int argc, char **argv, struct cmdline_options *opts) {
 						exit(EXIT_FAILURE);
 					}
 				}
+				break;
+			case 'P':
+				opts->continousPerfReporting = true;
 				break;
 			default:
 				cout << "unknown argument: " << opt << " ... stop!\n";

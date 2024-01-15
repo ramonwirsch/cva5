@@ -144,6 +144,9 @@ public:
   void set_uart_file(int uartFile);
   void reset_uart();
 
+  void force_terminate();
+  void set_continousPerfReporting(bool reporting);
+
   //DDR Simulation
   Vcva5_sim *tb;
   axi_ddr_sim * axi_ddr;
@@ -190,6 +193,11 @@ private:
   int userAppResponse = -100;
 
   bool terminateOnUserExit = false;
+
+  bool continousPerfReporting = false;
+  std::chrono::time_point<std::chrono::system_clock> lastContMeasurementTime;
+  uint64_t lastContTickCount;
+  void handlePerfReporting();
 
   void update_stats();
   void update_UART();

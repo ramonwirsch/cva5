@@ -40,6 +40,9 @@ uint32_t CVA5Tracer::check_if_instruction_retired(uint32_t pattern, uint32_t mas
     return 0;
 }
 
+void CVA5Tracer::force_terminate() {
+    terminated = true;
+}
 
 bool CVA5Tracer::has_terminated() {
     return terminated;
@@ -86,6 +89,8 @@ void CVA5Tracer::reset() {
     stalling = false;
     stall_count = 0;
     userAppResponse = -100;
+    this->lastContTickCount = ticks;
+    this->lastContMeasurementTime = chrono::system_clock::now();
 
     tb->clk = 0;
     tb->rst = 1;
@@ -273,6 +278,27 @@ void CVA5Tracer::tick() {
         }
     }
 
+    if (continousPerfReporting) {
+        handlePerfReporting();
+    }
+
+}
+
+void CVA5Tracer::handlePerfReporting() {
+    auto now = chrono::system_clock::now();
+
+    auto msSince = static_cast<long>(chrono::duration_cast<chrono::milliseconds>(now - this->lastContMeasurementTime).count());
+    if (msSince > 10000) {
+
+        auto cyclesSince = ticks - lastContTickCount;
+
+        float perf = (static_cast<float>(cyclesSince) / msSince) * 1000;
+
+        cout << "#Sim Perf: " << perf << " cyc/s at tick " << ticks << endl;
+
+        this->lastContMeasurementTime = now;
+        this->lastContTickCount = ticks;
+    }
 }
 
 void CVA5Tracer::set_stall_limit(int stallLimit) {
@@ -393,6 +419,10 @@ uint64_t CVA5Tracer::get_cycle_count() {
 
 uint64_t CVA5Tracer::get_ticks() {
     return ticks;
+}
+
+void CVA5Tracer::set_continousPerfReporting(bool reporting) {
+    continousPerfReporting = reporting;
 }
 
 CVA5Tracer::CVA5Tracer(const char* const* const eventNames, const int numEvents, const int scratchMemSizeKB) : eventNames(eventNames), numEvents(numEvents) {

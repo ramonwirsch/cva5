@@ -10,6 +10,8 @@
 #include "cmdArgs.h"
 #include "buildCva5Tracer.h"
 #include "MemoryFragmentLoader.h"
+#include <signal.h>
+#include <chrono>
 
 using namespace std;
 
@@ -25,7 +27,16 @@ int openPort(char *port) {
 	return fd;
 }
 
+void sigintHandler(int sig) {
+	if (cva5Tracer) {
+		cva5Tracer->force_terminate();
+	}
+	cout << "Received SIGINT. Terminating..." << endl;;
+}
+
 int main(int argc, char **argv) {
+	signal(SIGINT, sigintHandler);
+
 	ofstream logFile, sigFile, pcFile;
 	int uartFile = 0;
 	struct cmdline_options opts;
@@ -133,6 +144,9 @@ int main(int argc, char **argv) {
 		cva5Tracer->set_stall_limit(opts.stallLimit);
 	}
 
+	cva5Tracer->set_continousPerfReporting(opts.continousPerfReporting);
+
+
 	cva5Tracer->reset();
 	cout << "--------------------------------------------------------------\n";
 	cout << "   Starting Simulation";
@@ -142,6 +156,8 @@ int main(int argc, char **argv) {
 	cout << "\n";
 	cout << "--------------------------------------------------------------\n";
 	cout << flush;
+
+	auto time_simStart = chrono::system_clock::now();
 
 	// Tick the clock until we are done
     bool sig_phase_complete = false;
@@ -157,8 +173,12 @@ int main(int argc, char **argv) {
         }
 	} while (!(cva5Tracer->has_stalled() || cva5Tracer->has_terminated()));
 
+	auto time_simStop = chrono::system_clock::now();
+	auto msSince = static_cast<long>(chrono::duration_cast<chrono::milliseconds>(time_simStop - time_simStart).count());
+	float perf = (static_cast<float>(cva5Tracer->get_ticks()) / msSince) * 1000;
+
 	cout << "\n--------------------------------------------------------------\n";
-	cout << "   Simulation Completed  " << cva5Tracer->get_cycle_count() << " cycles.\n";
+	cout << "   Simulation Completed  " << cva5Tracer->get_ticks() << " cycles, " << perf << " cyc/s" << endl;
     cva5Tracer->print_stats();
 
 	int exitCode = cva5Tracer->get_user_app_response();
