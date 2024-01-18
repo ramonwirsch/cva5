@@ -47,6 +47,7 @@ package cva5_config;
         bit [31:0] CPU_ID;
         bit [31:0] RESET_VEC; //PC value on reset
         bit [31:0] RESET_MTVEC;
+        bit [5:0] CUSTOM_MEXT_INTERRUPT_COUNT;
         csr_non_standard_config_t NON_STANDARD_OPTIONS;
     } csr_config_t;
 
@@ -207,6 +208,7 @@ package cva5_config;
             CPU_ID : 0,
             RESET_VEC : 32'h80000000,
             RESET_MTVEC : 32'h80000100,
+            CUSTOM_MEXT_INTERRUPT_COUNT : 0,
             NON_STANDARD_OPTIONS : '{
                 COUNTER_W : 33,
                 MCYCLE_WRITEABLE : 1,

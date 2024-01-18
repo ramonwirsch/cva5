@@ -238,6 +238,7 @@ generate if (CONFIG.INCLUDE_M_MODE) begin : gen_csr_m_mode
     mstatus_t mstatus_new;
 
     logic [ECODE_W-1:0] interrupt_cause_r;
+    logic [ECODE_W-1:0] interrupt_cause;
 
     //Interrupt and Exception Delegation
     //Can delegate to supervisor if currently in supervisor or user modes
@@ -403,13 +404,16 @@ generate if (CONFIG.INCLUDE_M_MODE) begin : gen_csr_m_mode
             end
             mip.mtip <= m_interrupt.timer; // per spec, MT & ME are not writeable, source is responsible for clearing them. If I leave them as is, CVA5 will never clear them, as the OS has no business writing them to 0 per spec.
             mip.meip <= m_interrupt.external;
+            for (int i=0; i < CONFIG.CSRS.CUSTOM_MEXT_INTERRUPT_COUNT; i++) begin
+                mip.custom[16+i] <= m_interrupt[16+i];
+            end
         end
     end
     assign interrupt_pending = |(mip & mie) && (mstatus.mie || privilege_level != MACHINE_PRIVILEGE);
 
     ////////////////////////////////////////////////////
     //MIE
-    assign mie_mask = '{default:0, meie:1, seie:CONFIG.INCLUDE_S_MODE, mtie:1, stie:CONFIG.INCLUDE_S_MODE, msie:1, ssie:CONFIG.INCLUDE_S_MODE};
+    assign mie_mask = '{default:0, meie:1, seie:CONFIG.INCLUDE_S_MODE, mtie:1, stie:CONFIG.INCLUDE_S_MODE, msie:1, ssie:CONFIG.INCLUDE_S_MODE, custom: {{16-CONFIG.CSRS.CUSTOM_MEXT_INTERRUPT_COUNT{1'b0}},{CONFIG.CSRS.CUSTOM_MEXT_INTERRUPT_COUNT{1'b1}}}};
     assign sie_mask = '{default:0, seie:1, stie:1, ssie:1};
 
     always_ff @(posedge clk) begin
@@ -475,25 +479,29 @@ generate if (CONFIG.INCLUDE_M_MODE) begin : gen_csr_m_mode
     end
 
     mip_t mip_cause;
-    logic [5:0] mip_priority_vector;
-    logic [2:0] mip_cause_sel;
+    logic [16+5:0] mip_priority_vector;
+    logic [$clog2(6+CONFIG.CSRS.CUSTOM_MEXT_INTERRUPT_COUNT)-1:0] mip_cause_sel;
 
-    const logic [ECODE_W-1:0] interruput_code_table [7:0] = '{ 0, 0, 
+    const logic [ECODE_W-1:0] interrupt_code_table [16+8:0] = '{
+        31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16,
+        0, 0, 0, 
         M_EXTERNAL_INTERRUPT, M_TIMER_INTERRUPT, M_SOFTWARE_INTERRUPT,
         S_EXTERNAL_INTERRUPT, S_TIMER_INTERRUPT, S_SOFTWARE_INTERRUPT
     };
     assign mip_cause = (mip & mie);
-    assign mip_priority_vector = '{mip_cause.meip, mip_cause.mtip, mip_cause.msip, mip_cause.seip, mip_cause.stip, mip_cause.ssip};
+    assign mip_priority_vector = {mip_cause.custom, mip_cause.meip, mip_cause.mtip, mip_cause.msip, mip_cause.seip, mip_cause.stip, mip_cause.ssip};
 
-    priority_encoder #(.WIDTH(6))
+    priority_encoder #(.WIDTH(6+CONFIG.CSRS.CUSTOM_MEXT_INTERRUPT_COUNT))
     interrupt_cause_encoder (
-        .priority_vector (mip_priority_vector),
+        .priority_vector (mip_priority_vector[0+:(6+CONFIG.CSRS.CUSTOM_MEXT_INTERRUPT_COUNT)]),
         .encoded_result (mip_cause_sel)
     );
 
+    assign interrupt_cause = interrupt_code_table[5'(mip_cause_sel)];
+
     always_ff @(posedge clk) begin
         if (interrupt_pending)
-            interrupt_cause_r <= interruput_code_table[mip_cause_sel];
+            interrupt_cause_r <= interrupt_cause;
     end
 
     always_ff @(posedge clk) begin
@@ -504,7 +512,7 @@ generate if (CONFIG.INCLUDE_M_MODE) begin : gen_csr_m_mode
         end
         else if (CONFIG.CSRS.NON_STANDARD_OPTIONS.INCLUDE_MCAUSE & ((mcause_write_valid & mwrite_en(MCAUSE)) | exception.valid | interrupt_take)) begin
             mcause.is_interrupt <= interrupt_take | (mwrite_en(MCAUSE) & updated_csr[XLEN-1]);
-            mcause.code <= interrupt_take ? interrupt_cause_r : exception.valid ? exception.code : updated_csr[ECODE_W-1:0];
+            mcause.code <= interrupt_take ? interrupt_cause : exception.valid ? exception.code : updated_csr[ECODE_W-1:0];
         end
     end
 

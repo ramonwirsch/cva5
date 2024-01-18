@@ -348,6 +348,7 @@ package cva5_types;
         logic software;
         logic timer;
         logic external;
+        logic [31:16] custom;
     } interrupt_t;
     
     typedef struct packed {
