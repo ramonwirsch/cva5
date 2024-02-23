@@ -161,7 +161,6 @@ package csr_types;
     } mcause_t;
     /* verilator lint_on SYMRSVDWORD */
 
-
     typedef struct packed {
         logic mode;
         logic [ASIDLEN-1:0] asid;

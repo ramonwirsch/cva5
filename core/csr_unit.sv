@@ -333,13 +333,20 @@ generate if (CONFIG.INCLUDE_M_MODE) begin : gen_csr_m_mode
     ////////////////////////////////////////////////////
     //MTVEC
     //No vectored mode, mode hard-coded to zero
-    initial mtvec[31:2] = CONFIG.CSRS.RESET_MTVEC[31:2];
+    initial mtvec = CONFIG.CSRS.RESET_MTVEC;
     always_ff @(posedge clk) begin
-        mtvec[1:0] <= '0;
+        if (!CONFIG.CSRS.MTVEC_VECTORED || rst)
+            mtvec[1:0] <= '0;
+        else if (CONFIG.CSRS.NON_STANDARD_OPTIONS.MTVEC_WRITEABLE & mwrite_en(MTVEC))
+            mtvec[1:0] <= updated_csr[1:0];
+
         if (CONFIG.CSRS.NON_STANDARD_OPTIONS.MTVEC_WRITEABLE & mwrite_en(MTVEC))
             mtvec[XLEN-1:2] <= updated_csr[XLEN-1:2];
     end
-    assign exception_target_pc = mtvec;
+
+    logic [ECODE_W-1:0] mtvec_vectored_offset;
+    assign mtvec_vectored_offset = mcause.is_interrupt? mcause.code : 5'h0;
+    assign exception_target_pc = (CONFIG.CSRS.MTVEC_VECTORED && mtvec[1:0] == 2'h1)? { mtvec[XLEN-1:ECODE_W+2], mtvec_vectored_offset, 2'b0 } : { mtvec[XLEN-1:2], 2'b0 };
 
     ////////////////////////////////////////////////////
     //MEDELEG
