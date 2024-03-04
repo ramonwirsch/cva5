@@ -345,7 +345,7 @@ generate if (CONFIG.INCLUDE_M_MODE) begin : gen_csr_m_mode
     end
 
     logic [ECODE_W-1:0] mtvec_vectored_offset;
-    assign mtvec_vectored_offset = mcause.is_interrupt? mcause.code : 5'h0;
+    assign mtvec_vectored_offset = mcause.is_interrupt? interrupt_cause_r : 5'h0;
     assign exception_target_pc = (CONFIG.CSRS.MTVEC_VECTORED && mtvec[1:0] == 2'h1)? { mtvec[XLEN-1:ECODE_W+2], mtvec_vectored_offset, 2'b0 } : { mtvec[XLEN-1:2], 2'b0 };
 
     ////////////////////////////////////////////////////
@@ -412,7 +412,7 @@ generate if (CONFIG.INCLUDE_M_MODE) begin : gen_csr_m_mode
             mip.mtip <= m_interrupt.timer; // per spec, MT & ME are not writeable, source is responsible for clearing them. If I leave them as is, CVA5 will never clear them, as the OS has no business writing them to 0 per spec.
             mip.meip <= m_interrupt.external;
             for (int i=0; i < CONFIG.CSRS.CUSTOM_MEXT_INTERRUPT_COUNT; i++) begin
-                mip.custom[16+i] <= m_interrupt[16+i];
+                mip.custom[16+i] <= m_interrupt.custom[16+i];
             end
         end
     end
@@ -475,6 +475,8 @@ generate if (CONFIG.INCLUDE_M_MODE) begin : gen_csr_m_mode
         M_INTERRUPT_MASKING_ROM[M_TIMER_INTERRUPT] = 1;
         M_INTERRUPT_MASKING_ROM[S_EXTERNAL_INTERRUPT] = CONFIG.INCLUDE_S_MODE;
         M_INTERRUPT_MASKING_ROM[M_EXTERNAL_INTERRUPT] = 1;
+        for (int i=32'(M_PLATFORM0_INTERRUPT); i <= 32'(M_PLATFORM15_INTERRUPT); i++)
+            M_INTERRUPT_MASKING_ROM[i] = (5'(i)-M_PLATFORM0_INTERRUPT) < CONFIG.CSRS.CUSTOM_MEXT_INTERRUPT_COUNT;
     end
 
     logic mcause_write_valid;
@@ -489,9 +491,8 @@ generate if (CONFIG.INCLUDE_M_MODE) begin : gen_csr_m_mode
     logic [16+5:0] mip_priority_vector;
     logic [$clog2(6+CONFIG.CSRS.CUSTOM_MEXT_INTERRUPT_COUNT)-1:0] mip_cause_sel;
 
-    const logic [ECODE_W-1:0] interrupt_code_table [16+8:0] = '{
+    const logic [ECODE_W-1:0] interrupt_code_table [16+5:0] = '{
         31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16,
-        0, 0, 0, 
         M_EXTERNAL_INTERRUPT, M_TIMER_INTERRUPT, M_SOFTWARE_INTERRUPT,
         S_EXTERNAL_INTERRUPT, S_TIMER_INTERRUPT, S_SOFTWARE_INTERRUPT
     };

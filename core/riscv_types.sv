@@ -270,7 +270,25 @@ package riscv_types;
         //RESERVED
         S_EXTERNAL_INTERRUPT = 5'd9,
         //RESERVED
-        M_EXTERNAL_INTERRUPT = 5'd11
+        M_EXTERNAL_INTERRUPT = 5'd11,
+        //RESERVED
+        //Platform / CUSTOM. Need to be enabled in CVA5_CONFIG
+        M_PLATFORM0_INTERRUPT = 5'd16,
+        M_PLATFORM1_INTERRUPT = 5'd17,
+        M_PLATFORM2_INTERRUPT = 5'd18,
+        M_PLATFORM3_INTERRUPT = 5'd19,
+        M_PLATFORM4_INTERRUPT = 5'd20,
+        M_PLATFORM5_INTERRUPT = 5'd21,
+        M_PLATFORM6_INTERRUPT = 5'd22,
+        M_PLATFORM7_INTERRUPT = 5'd23,
+        M_PLATFORM8_INTERRUPT = 5'd24,
+        M_PLATFORM9_INTERRUPT = 5'd25,
+        M_PLATFORM10_INTERRUPT = 5'd26,
+        M_PLATFORM11_INTERRUPT = 5'd27,
+        M_PLATFORM12_INTERRUPT = 5'd28,
+        M_PLATFORM13_INTERRUPT = 5'd29,
+        M_PLATFORM14_INTERRUPT = 5'd30,
+        M_PLATFORM15_INTERRUPT = 5'd31
     } interrupt_code_t;
 
     typedef enum bit [4:0] {
