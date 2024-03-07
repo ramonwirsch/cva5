@@ -155,8 +155,8 @@ module load_store_queue //ID-based input buffer for Load/Store Unit
         subunit_id : load_selected ? lq_data_out.subunit_id : sq.data_out.subunit_id,
         amo : '{
             is_lr : lq_data_out.is_amo_lr,
-            is_sc : sq.data_out.is_amo_sc,
-            is_rmw : sq.data_out.is_amo_rmw,
+            is_sc : sq.valid && sq.data_out.is_amo_sc,
+            is_rmw : sq.valid && sq.data_out.is_amo_rmw,
             is_acquire : 0,
             is_release : 0,
             op : sq.data_out.amo_op
