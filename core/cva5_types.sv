@@ -75,6 +75,7 @@ package cva5_types;
     typedef struct packed{
         id_t id;
         logic [31:0] pc;
+        logic pc_valid;
         logic [31:0] instruction;
         logic valid;
         fetch_metadata_t fetch_metadata;
@@ -82,6 +83,7 @@ package cva5_types;
 
     typedef struct packed{
         logic [31:0] pc;
+        logic pc_valid;
         logic [31:0] instruction;
         logic [2:0] fn3;
         logic [6:0] opcode;

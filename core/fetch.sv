@@ -44,6 +44,7 @@ module fetch
         input logic pc_id_available,
         output logic pc_id_assigned,
         output logic fetch_complete,
+        output logic fetch_flushing, // indicate that whatever PCs were already pc_id_assigned already are invalid (due to flushing). Essentially = !have any PCs that will be fetched and executed
         output fetch_metadata_t fetch_metadata,
 
         branch_predictor_interface.fetch bp,
@@ -197,7 +198,7 @@ module fetch
         .one_hot (sub_unit_address_match), 
         .int_out (fetch_attr_next.subunit_id)
     );
-    assign fetch_attr_next.is_predicted_branch_or_jump = bp.use_prediction;
+    assign fetch_attr_next.is_predicted_branch_or_jump = bp.use_prediction && pc_sel == 2; // only if priority_encoder also elected to use prediction and not do s.o. flush
     assign fetch_attr_next.is_branch = bp.use_prediction & bp.is_branch;
     assign fetch_attr_next.address_valid = address_valid;
     assign fetch_attr_next.mmu_fault = tlb.is_fault;
@@ -304,6 +305,7 @@ module fetch
 
     assign internal_fetch_complete = fetch_attr_fifo.valid & (fetch_attr.address_valid ? |unit_data_valid : ~valid_fetch_result);//allow instruction to propagate to decode if address is invalid
     assign fetch_complete = internal_fetch_complete & ~|flush_count;
+    assign fetch_flushing = |flush_count;
 
     ////////////////////////////////////////////////////
     //Branch Predictor corruption check

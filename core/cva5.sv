@@ -176,7 +176,7 @@ module cva5
     logic [31:0] if_pc;
         //Fetch stage
     id_t fetch_id;
-    logic fetch_complete;
+    logic fetch_complete, fetch_flushing;
     logic [31:0] fetch_instruction;
     logic early_branch_flush;
     logic early_branch_flush_ras_adjust;
@@ -324,6 +324,7 @@ module cva5
         .branch_flush(branch_flush),
         .early_branch_flush (early_branch_flush),
         .fetch_complete (fetch_complete),
+        .fetch_flushing (fetch_flushing),
         .fetch_instruction (fetch_instruction),
         .fetch_metadata (fetch_metadata),
         .decode (decode),
@@ -365,6 +366,7 @@ module cva5
         .pc_id_available (pc_id_available),
         .pc_id_assigned (pc_id_assigned),
         .fetch_complete (fetch_complete),
+        .fetch_flushing (fetch_flushing),
         .fetch_metadata (fetch_metadata),
         .bp (bp),
         .ras (ras),

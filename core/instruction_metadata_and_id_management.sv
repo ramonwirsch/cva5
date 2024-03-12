@@ -46,6 +46,7 @@ module instruction_metadata_and_id_management
         input logic branch_flush,
         input logic early_branch_flush,
         input logic fetch_complete,
+        input logic fetch_flushing,
         input logic [31:0] fetch_instruction,
         input fetch_metadata_t fetch_metadata,
 
@@ -402,6 +403,7 @@ module instruction_metadata_and_id_management
     assign decode.id = decode_id;
     assign decode.valid = fetched_count_neg[LOG2_MAX_IDS];
     assign decode.pc = pc_table[decode_id];
+    assign decode.pc_valid = ~fetch_flushing; //TODO could be tracked here, same as fetched_count_neg, just be counting the number if ids between pc_id_assigned and fetch_complete that were not flushed away by fetch_flush. But fetcher already tracks this more efficiently
     assign decode.instruction = instruction_table[decode_id];
     assign decode.fetch_metadata = CONFIG.INCLUDE_M_MODE ? fetch_metadata_table[decode_id] : '{ok : 1, error_code : INST_ACCESS_FAULT};
 

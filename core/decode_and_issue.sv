@@ -292,10 +292,13 @@ module decode_and_issue
     end
 
     always_ff @(posedge clk) begin
-        if (rst | gc.fetch_flush)
+        if (rst | gc.fetch_flush) begin
             issue.stage_valid <= 0;
-        else if (issue_stage_ready)
+            issue.pc_valid <= 0;
+        end else if (issue_stage_ready) begin
             issue.stage_valid <= decode.valid;
+            issue.pc_valid <= decode.pc_valid;
+        end
     end
 
     ////////////////////////////////////////////////////
@@ -526,7 +529,7 @@ module decode_and_issue
     assign branch_inputs.jal_jalr = issue.opcode[2];
 
     assign branch_inputs.issue_pc = issue.pc;
-    assign branch_inputs.issue_pc_valid = issue.stage_valid;
+    assign branch_inputs.issue_pc_valid = issue.pc_valid;
     assign branch_inputs.rs1 = {(gp_rf.data[RSG1][31] & br_use_signed), gp_rf.data[RSG1]};
     assign branch_inputs.rs2 = {(gp_rf.data[RSG2][31] & br_use_signed), gp_rf.data[RSG2]};
     assign branch_inputs.pc_p4 = constant_alu;
