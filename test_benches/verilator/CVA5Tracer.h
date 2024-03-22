@@ -23,6 +23,7 @@
 #ifndef CVA5Tracer_H
 #define CVA5Tracer_H
 #include <cstdlib>
+#include <chrono>
 #include <iostream>
 #include <iterator>
 #include <termios.h>
