@@ -98,6 +98,7 @@ module load_store_unit
 
     logic [NUM_SUB_UNITS:1] sub_unit_address_match;
     logic [NUM_SUB_UNITS:0] sub_unit_loads_non_destructive;
+    logic [NUM_SUB_UNITS:0] sub_unit_strictly_ordered;
 
     data_access_shared_inputs_t shared_inputs;
     logic [31:0] unit_data_array [NUM_SUB_UNITS:0];
@@ -265,6 +266,7 @@ module load_store_unit
         load : ls_inputs.load,
         store : ls_inputs.store,
         loads_non_destructive : sub_unit_loads_non_destructive[input_subunit_id],
+        strictly_ordered : sub_unit_strictly_ordered[input_subunit_id],
         is_float : ls_inputs.is_float,
         id : issue.id,
         subunit_id : input_subunit_id,
@@ -382,6 +384,7 @@ module load_store_unit
     
     // dummy values for subunit_id 0, which is an illegal access
     assign sub_unit_loads_non_destructive[0] = 1;
+    assign sub_unit_strictly_ordered[0] = 1;
     assign unit_data_valid[0] = gc.writeback_suppress && load_attributes.valid && wb_attr.subunit_id == 0;
     assign unit_data_array[0] = 32'hCDCDCDCD;
 
@@ -403,6 +406,7 @@ module load_store_unit
 
     generate if (CONFIG.INCLUDE_DLOCAL_MEM) begin : gen_ls_local_mem
         assign sub_unit_loads_non_destructive[LOCAL_MEM_ID] = 1;
+        assign sub_unit_strictly_ordered[LOCAL_MEM_ID] = 0;
         assign sub_unit_address_match[LOCAL_MEM_ID] = dlocal_mem_addr_utils.address_range_check(physical_address);
 
         local_mem_sub_unit #(
@@ -418,7 +422,8 @@ module load_store_unit
     endgenerate
 
     generate if (CONFIG.INCLUDE_PERIPHERAL_BUS) begin : gen_ls_pbus
-            assign sub_unit_loads_non_destructive[BUS_ID] = 1;
+            assign sub_unit_loads_non_destructive[BUS_ID] = 1; //TODO this is incomplete. Intend was to treat peri-loads as stores, only committing them when id_tracking allows. But this requires id_tracking to do special handling because, loads have a result, so it cannot be retiring. Also slows down all peri-loads to much. And CPU has no late exceptions, so not relevant to hold back
+            assign sub_unit_strictly_ordered[BUS_ID] = 1;
             assign sub_unit_address_match[BUS_ID] = dpbus_addr_utils.address_range_check(physical_address);
 
             if(CONFIG.PERIPHERAL_BUS_TYPE == AXI_BUS)
@@ -451,6 +456,7 @@ module load_store_unit
         if (CONFIG.INCLUDE_DCACHE) begin : gen_ls_dcache
             logic uncacheable;
             assign sub_unit_loads_non_destructive[DCACHE_ID] = 1;
+            assign sub_unit_strictly_ordered[DCACHE_ID] = 0;
             assign sub_unit_address_match[DCACHE_ID] = dcache_addr_utils.address_range_check(physical_address);
             assign uncacheable = uncacheable_utils.address_range_check(shared_inputs.addr);
 

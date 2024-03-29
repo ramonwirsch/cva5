@@ -63,6 +63,7 @@ module store_queue
     //Register-based memory blocks
     logic [CONFIG.SQ_DEPTH-1:0] valid;
     logic [CONFIG.SQ_DEPTH-1:0] valid_next;
+    logic [CONFIG.SQ_DEPTH-1:0] strictly_ordered;
     addr_hash_t [CONFIG.SQ_DEPTH-1:0] hashes;
     logic [CONFIG.SQ_DEPTH-1:0] released;
     id_t [CONFIG.SQ_DEPTH-1:0] id_needed;
@@ -144,6 +145,11 @@ module store_queue
             sq_entry[sq_index] <= sq_entry_in;
     end
 
+    always_ff @(posedge clk) begin
+        if (sq.push)
+            strictly_ordered[sq_index] <= sq.data_in.strictly_ordered;
+    end
+
     //Hash mem
     always_ff @ (posedge clk) begin
         if (sq.push)
@@ -152,12 +158,16 @@ module store_queue
 
     //Keep count of the number of pending loads that might need a store result
     //Mask out any store completing on this cycle
+    logic [CONFIG.SQ_DEPTH-1:0] strictly_ordered_match;
+    logic [CONFIG.SQ_DEPTH-1:0] addr_hash_match;
     logic [CONFIG.SQ_DEPTH-1:0] new_load_waiting;
     logic [CONFIG.SQ_DEPTH-1:0] waiting_load_completed;
 
     always_comb begin
         for (int i = 0; i < CONFIG.SQ_DEPTH; i++) begin
-            potential_store_conflicts[i] = (valid[i] & ~issued_one_hot[i]) & (addr_hash == hashes[i]);
+            strictly_ordered_match[i] = sq.data_in.strictly_ordered && strictly_ordered[i]; // new load being queued is marked as strictly ordered towards stores already queued
+            addr_hash_match[i] = addr_hash == hashes[i]; // new load being queued matches addr of stores already queued
+            potential_store_conflicts[i] = (valid[i] && ~issued_one_hot[i]) && (strictly_ordered_match[i] || addr_hash_match[i]); // remember which stores came before that load and store that with that queued load
             new_load_waiting[i] = potential_store_conflicts[i] & lq_push;
             waiting_load_completed[i] = prev_store_conflicts[i] & lq_pop;
 

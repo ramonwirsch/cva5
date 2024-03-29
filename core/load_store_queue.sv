@@ -105,7 +105,7 @@ module load_store_queue //ID-based input buffer for Load/Store Unit
         subunit_id : lsq.data_in.subunit_id,
         potential_store_conflicts : potential_store_conflicts,
         is_amo_lr : lsq.data_in.amo.is_lr,
-        has_paired_store : lsq.data_in.store || !lsq.data_in.loads_non_destructive // will only be pushed if marked as load
+        has_paired_store : lsq.data_in.store || !lsq.data_in.loads_non_destructive // pure stores without any other property will not be pushed
     };
     assign lq.data_in = lq_data_in;
     assign lq_data_out = lq.data_out;

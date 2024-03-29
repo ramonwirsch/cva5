@@ -261,6 +261,7 @@ package cva5_types;
         logic load;
         logic store;
         logic loads_non_destructive;
+        logic strictly_ordered;
         logic [3:0] be;
         logic [2:0] fn3;
         logic is_float;
