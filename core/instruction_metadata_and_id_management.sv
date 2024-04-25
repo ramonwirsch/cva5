@@ -417,7 +417,7 @@ module instruction_metadata_and_id_management
      generate for (i = 0; i < RF_CONFIG.TOTAL_WB_GROUP_COUNT; i++) begin : gen_commit_packet
         assign commit_packet[i].id = wb_packet[i].id;
         assign commit_packet[i].phys_addr = commit_phys_addr[i];        
-        assign commit_packet[i].valid = wb_packet[i].valid & |commit_phys_addr[i];
+        assign commit_packet[i].valid = wb_packet[i].valid && ((i >= RF_CONFIG.GP_WB_GROUP_COUNT) || |commit_phys_addr[i]); // GP physAddr 0 is mapped to rZero, which is never written to. All other writePorts after that
         assign commit_packet[i].data = wb_packet[i].data;
      end endgenerate
 

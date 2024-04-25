@@ -29,7 +29,8 @@ module register_bank
     #(
         parameter NUM_READ_PORTS = 2,
         parameter DATA_WIDTH = 32,
-        parameter DEPTH = 64
+        parameter DEPTH = 64,
+        parameter ALLOW_WRITE_P0 = 0
     )
     (
         input logic clk,
@@ -65,7 +66,7 @@ module register_bank
     ////////////////////////////////////////////////////
     //Assertions
     write_to_zero_reg_assertion:
-        assert property (@(posedge clk) disable iff (rst) !(commit & write_addr == 0))
+        assert property (@(posedge clk) disable iff (rst) !(commit && write_addr == 0 && !ALLOW_WRITE_P0))
         else $error("Write to zero reg occured!");
 
 endmodule

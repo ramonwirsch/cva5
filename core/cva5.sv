@@ -523,6 +523,7 @@ module cva5
         .READ_PORTS(RF_CONFIG.GP_READ_PORT_COUNT),
         .DEPTH(64),
         .DATA_WIDTH(32),
+        .ALLOW_WRITE_P0(0),
         .SELF_FLUSH(0) // means we will externally wire up commit port 0 to flush, because conveniently it will already have the addr that needs flushing we will only force the valid bit
     ) regfile_gp (
         .clk (clk),
@@ -553,6 +554,7 @@ module cva5
             .READ_PORTS(RF_CONFIG.FP_READ_PORT_COUNT),
             .DEPTH(64),
             .DATA_WIDTH(34),
+            .ALLOW_WRITE_P0(1),
             .SELF_FLUSH(1) // the RF will internally mux a toggle port to kill inflight regs with flushes. Otherwise would require 1 more toggle write port just for flushing
         ) regfile_fp (
             .clk (clk),

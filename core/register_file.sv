@@ -33,6 +33,7 @@ module register_file
         parameter READ_PORTS = 2,
         parameter DATA_WIDTH = 32,
         parameter DEPTH = 64,
+        parameter ALLOW_WRITE_P0 = 0, // allow register "0" to be written to. RV GP Regs, this is Zero, which we must not write to
         parameter SELF_FLUSH = 0 // GP_RF flushed on write_port 1, which is ALU. Because the rf_issue.phys_rd addr is always the one to flush & the one for alu-single-issue writebacks
     ) // FP_RF cannot do that, because there is no single-issue write-port. Need to multiplex flushing on write_port 0 (because flushing procludes marking new reg as inflight, but fpu writebacks might still occur)
     // "rf_issue.single_cycle_or_flush" just means flush in that case
@@ -128,7 +129,8 @@ module register_file
         register_bank #(
             .NUM_READ_PORTS(READ_PORTS),
             .DATA_WIDTH(DATA_WIDTH),
-            .DEPTH(DEPTH)
+            .DEPTH(DEPTH),
+            .ALLOW_WRITE_P0(ALLOW_WRITE_P0)
         ) reg_group (
             .clk(clk),
             .rst(rst),
