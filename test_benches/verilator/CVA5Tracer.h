@@ -137,8 +137,9 @@ public:
   void set_terminate_on_user_exit(bool terminate);
   void set_stall_limit(int stallLimit);
 
-  uint64_t get_cycle_count();
-  uint64_t get_ticks();
+  uint64_t get_waveform_phase_count();
+  uint64_t get_non_resetting_cycle_count();
+  uint64_t get_resettable_cycle_count();
 
   int get_user_app_response();
 
@@ -168,13 +169,13 @@ private:
   int stall_limit = 2000;
   int stall_count = 0;
   /**
-   * counts time-intervals of simulation. Needed for VCD. Needs to be strictly monotone.
+   * counts time-intervals of waveform. Needs to be strictly monotone, never resets. Right now counts 2 intervals per clock cycle (rising edge, falling edge)
    */
-  uint64_t cycle_count = 0;
+  uint64_t wv_phase_count = 0;
   /**
    * counts actual clock-cycles for the application. Can be reset be Hint-NOP
    */
-  uint64_t ticks = 0;
+  uint64_t resettable_cycle_count = 0;
   const char * const* const eventNames;
   const int numEvents;
   uint64_t* event_counters;

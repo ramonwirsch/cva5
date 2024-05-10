@@ -148,7 +148,7 @@ module fp_mac_unit_sp
     logic will_need_adder;
     logic signMod_takes_input;
     //assign signMod_takes_input = !input_buf.op.add_rs1_rs2 && !input_buf.op.mul && result_takes_signMod;
-    assign signMod_takes_input = !input_buf.op.mul && signMod_advance;
+    assign signMod_takes_input = !input_buf.op.mul && signMod_advance && !addMode_mulResult;
 
     always_comb begin
         case (ovr_sign_mode)

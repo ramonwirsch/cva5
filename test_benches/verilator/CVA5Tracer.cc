@@ -77,7 +77,7 @@ void CVA5Tracer::print_stats() {
     for (int i=0; i < numEvents; i++)
        std::cout << "    " << eventNames[i] << ":" << event_counters[i] << std::endl;
 
-    std::cout << "    user_application_ticks:" << ticks << std::endl;
+    std::cout << "    user_application_ticks:" << get_resettable_cycle_count() << std::endl;
 	std::cout << "--------------------------------------------------------------\n\n";
 }
 
@@ -89,7 +89,7 @@ void CVA5Tracer::reset() {
     stalling = false;
     stall_count = 0;
     userAppResponse = -100;
-    this->lastContTickCount = ticks;
+    this->lastContTickCount = get_non_resetting_cycle_count();
     this->lastContMeasurementTime = chrono::system_clock::now();
 
     tb->clk = 0;
@@ -236,24 +236,24 @@ void CVA5Tracer::update_memory() {
 
 
 void CVA5Tracer::tick() {
-    cycle_count++;
+    wv_phase_count++;
 
     tb->clk = 1;
     tb->eval();
 
     #if VM_TRACE == 1
     if (verilatorWaveformTracer && trace_active) {
-        verilatorWaveformTracer->dump(vluint32_t(cycle_count));
+        verilatorWaveformTracer->dump(vluint32_t(wv_phase_count));
     }
     #endif
-    cycle_count++;
-    ticks++;
+    wv_phase_count++;
+    resettable_cycle_count++;
 
     tb->clk = 0;
     tb->eval();
     #if VM_TRACE == 1
     if (verilatorWaveformTracer && trace_active) {
-        verilatorWaveformTracer->dump(vluint32_t(cycle_count));
+        verilatorWaveformTracer->dump(vluint32_t(wv_phase_count));
     }
     #endif
 
@@ -290,14 +290,14 @@ void CVA5Tracer::handlePerfReporting() {
     auto msSince = static_cast<long>(chrono::duration_cast<chrono::milliseconds>(now - this->lastContMeasurementTime).count());
     if (msSince > 10000) {
 
-        auto cyclesSince = ticks - lastContTickCount;
+        auto cyclesSince = get_non_resetting_cycle_count() - lastContTickCount;
 
         float perf = (static_cast<float>(cyclesSince) / msSince) * 1000;
 
-        cout << "#Sim Perf: " << perf << " cyc/s at tick " << ticks << endl;
+        cout << "#Sim Perf: " << perf << " cyc/s at tick " << get_non_resetting_cycle_count() << endl;
 
         this->lastContMeasurementTime = now;
-        this->lastContTickCount = ticks;
+        this->lastContTickCount = get_non_resetting_cycle_count();
     }
 }
 
@@ -315,7 +315,7 @@ void CVA5Tracer::checkForStalls() {
             stalling = true;
             stall_count = 0;
             std::cout << "\n\nError!!!!\n";
-            std::cout << "Stall of " << stall_limit << " cycles detected at " << cycle_count << std::endl << std::endl;
+            std::cout << "Stall of " << stall_limit << " cycles detected at " << get_non_resetting_cycle_count() << " (" << get_resettable_cycle_count() << " since last counter reset)" << std::endl << std::endl;
 		} else {
 			stall_count++;
 		}
@@ -347,7 +347,7 @@ void CVA5Tracer::checkForTerminationAndMagicNops() {
                 if (magicNumber == MAGIC_TRACE_ENABLE) {
                     #if VM_TRACE == 1
                     if (verilatorWaveformTracer) {
-                        std::cerr << "Starting "<< TRACE_FORMAT << " trace at " << cycle_count << std::endl;
+                        std::cerr << "Starting "<< TRACE_FORMAT << " trace at " << get_non_resetting_cycle_count() << std::endl;
                         trace_active = true;
                     }
                     #else
@@ -356,23 +356,24 @@ void CVA5Tracer::checkForTerminationAndMagicNops() {
                 } else if (magicNumber == MAGIC_TRACE_DISABLE) {
                     #if VM_TRACE == 1
                     if (verilatorWaveformTracer) {
-                        std::cerr << "Stopping " << TRACE_FORMAT << " trace at " << cycle_count << std::endl;
+                        std::cerr << "Stopping " << TRACE_FORMAT << " trace at " << get_non_resetting_cycle_count() << std::endl;
                         trace_active = false;
                     }
                     #else
                     std::cerr << "Ignoring TRACE_DISABLE command, tracing was not configured" << std::endl;
                     #endif
                 } else if (magicNumber == MAGIC_TICKS_RESET) {
-                    ticks = 0;
+                    std::cerr << "Resetting cycle count to 0 " << std::endl;
+                    resettable_cycle_count = 0;
                 } else if (magicNumber == MAGIC_STAT_COLLECTION_START) {
-                    std::cerr << "Starting stat collection at " << cycle_count << std::endl;
+                    std::cerr << "Starting stat collection at " << get_non_resetting_cycle_count() << std::endl;
                     reset_stats();
                     collect_stats = true;
                 } else if (magicNumber == MAGIC_STAT_COLLECTION_RESUME) {
-                    std::cerr << "Resuming stat collection at " << cycle_count << std::endl;
+                    std::cerr << "Resuming stat collection at " << get_non_resetting_cycle_count() << std::endl;
                     collect_stats = true;
                 } else if (magicNumber == MAGIC_STAT_COLLECTION_END) {
-                    std::cerr << "Stopping stat collection at " << cycle_count << std::endl;
+                    std::cerr << "Stopping stat collection at " << get_non_resetting_cycle_count() << std::endl;
                     collect_stats = false;
                 } else if (magicNumber == MAGIC_USER_APP_START) {
                     userAppResponse = -10;
@@ -413,12 +414,16 @@ void CVA5Tracer::start_tracer(const char *trace_file) {
 
 
 
-uint64_t CVA5Tracer::get_cycle_count() {
-    return cycle_count;
+uint64_t CVA5Tracer::get_waveform_phase_count() {
+    return wv_phase_count;
 }
 
-uint64_t CVA5Tracer::get_ticks() {
-    return ticks;
+uint64_t CVA5Tracer::get_non_resetting_cycle_count() {
+    return wv_phase_count/2;
+}
+
+uint64_t CVA5Tracer::get_resettable_cycle_count() {
+    return resettable_cycle_count;
 }
 
 void CVA5Tracer::set_continousPerfReporting(bool reporting) {

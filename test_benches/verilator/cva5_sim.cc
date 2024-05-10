@@ -19,7 +19,7 @@ CVA5Tracer *cva5Tracer;
 
 //For time index on assertions
 double sc_time_stamp() {
-	return cva5Tracer->get_cycle_count();
+	return cva5Tracer->get_non_resetting_cycle_count();
 }
 
 int openPort(char *port) {
@@ -171,14 +171,25 @@ int main(int argc, char **argv) {
             std::cout << "--------------------------------------------------------------\n";
             cva5Tracer->set_log_file(&sigFile);
         }
+		/*if (cva5Tracer->get_non_resetting_cycle_count() == 40000) {
+			cva5Tracer->tb->rst = 1;
+			cva5Tracer->tick();
+			cva5Tracer->tb->rst = 0;
+		}*/
 	} while (!(cva5Tracer->has_stalled() || cva5Tracer->has_terminated()));
 
 	auto time_simStop = chrono::system_clock::now();
 	auto msSince = static_cast<long>(chrono::duration_cast<chrono::milliseconds>(time_simStop - time_simStart).count());
-	float perf = (static_cast<float>(cva5Tracer->get_ticks()) / msSince) * 1000;
+	float perf = (static_cast<float>(cva5Tracer->get_non_resetting_cycle_count()) / msSince) * 1000;
 
 	cout << "\n--------------------------------------------------------------\n";
-	cout << "   Simulation Completed  " << cva5Tracer->get_ticks() << " cycles, " << perf << " cyc/s" << endl;
+	uint64_t allCycles = cva5Tracer->get_non_resetting_cycle_count()
+	uint64_t resettableCycles = cva5Tracer->get_resettable_cycle_count();
+	cout << "   Simulation Completed  " << allCycles << " cycles ";
+	if (resettableCycles != allCycles) {
+		cout << "since last counter reset), ";
+	}
+	cout << perf << " cyc/s" << endl;
     cva5Tracer->print_stats();
 
 	int exitCode = cva5Tracer->get_user_app_response();
