@@ -183,7 +183,7 @@ int main(int argc, char **argv) {
 	float perf = (static_cast<float>(cva5Tracer->get_non_resetting_cycle_count()) / msSince) * 1000;
 
 	cout << "\n--------------------------------------------------------------\n";
-	uint64_t allCycles = cva5Tracer->get_non_resetting_cycle_count()
+	uint64_t allCycles = cva5Tracer->get_non_resetting_cycle_count();
 	uint64_t resettableCycles = cva5Tracer->get_resettable_cycle_count();
 	cout << "   Simulation Completed  " << allCycles << " cycles ";
 	if (resettableCycles != allCycles) {

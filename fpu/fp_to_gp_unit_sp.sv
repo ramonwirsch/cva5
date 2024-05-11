@@ -24,22 +24,43 @@ module fp_to_gp_unit_sp
         .R(toIeeeResult)
     );
 
-    logic [31:0] toUnsignedIntResult;
+    flopoco_t flopocoToUIntInput;
+    assign flopocoToUIntInput = {inputs.rs1[33:32], 1'b0, inputs.rs1[30:0]};
+    logic [31:0] flopocoToUIntResult, toUnsignedIntResult;
+    logic flopocoOverUnderflow;
+
+    logic rs1InputSign;
+    assign rs1InputSign = inputs.rs1[31];
+    logic rs1InputSign_r;
+
+    always_ff @(posedge clk) begin
+        rs1InputSign_r <= rs1InputSign;
+    end
 
     FP_to_u32_sp_param #(
         .NUM_STAGES(1)
     ) to32b (
         .clk(clk),
         .ce(stage_advance),
-        .I(inputs.rs1),
-        .O(toUnsignedIntResult)
+        .I(flopocoToUIntInput),
+        .O(flopocoToUIntResult),
+        .overUnderflow(flopocoOverUnderflow)
     );
 
     logic [31:0] toSignedIntResult;
     logic invalidToIntResult;
 
-    assign invalidToIntResult = ((inputs.op == FPCVT_TO_I_OP) && toUnsignedIntResult[31]) || (inputs.op == FPCVT_TO_U_OP && inputs.rs1[31]); // input is larger than 2^31-1 and supposed to be signed or input is negative when unsigned
-    assign toSignedIntResult = (toUnsignedIntResult[31])? {1'b0,  {31{1'b1}}} : -{1'b0, toUnsignedIntResult[30:0]};
+    assign toUnsignedIntResult = ((rs1InputSign_r))? 32'd0 :
+                                ((flopocoOverUnderflow && !rs1InputSign_r))? 32'hFFFFFFFF :
+                                flopocoToUIntResult;
+
+    logic [31:0] negatedToSignedIntResult;
+    assign negatedToSignedIntResult = -flopocoToUIntResult;
+    
+    assign toSignedIntResult = ((rs1InputSign_r && (flopocoOverUnderflow || flopocoToUIntResult[31])))? 32'h80000000 :
+                                ((!rs1InputSign_r && (flopocoOverUnderflow || flopocoToUIntResult[31])))? 32'h7FFFFFFF :
+                                (rs1InputSign_r)? {1'b1, negatedToSignedIntResult[30:0]} :
+                                flopocoToUIntResult;
 
     logic XltY, XeqY, XleY;
 

@@ -704,13 +704,13 @@ module decode_and_issue
 
             case (fn7_trim)
                 FCLASS_MV_TO_GP_fn7_T : begin
-                    case(fn3[0])
+                    case(rs_addr[RS2].rs[0])
                         0 : fp_to_gp_op = FP_TO_IEEE_OP;
                         default : fp_to_gp_op = FPCLASS_OP;
                     endcase
                 end
                 FCVT_TO_GP_fn7_T : begin
-                    case(fn3[0])
+                    case(rs_addr[RS2].rs[0])
                         0 : fp_to_gp_op = FPCVT_TO_I_OP;
                         default : fp_to_gp_op = FPCVT_TO_U_OP;
                     endcase
