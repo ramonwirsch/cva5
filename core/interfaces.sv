@@ -357,7 +357,7 @@ interface renamer_interface #(parameter NUM_WB_GROUPS = 2, parameter RF_READ_POR
 
     rs_addr_t rd_addr;
     rf_addr_t rs_addr [MAX_RS_REG_COUNT_PER_INSN]; // straight from the insn can only name 3 regs. Each one could be fp OR gp
-    logic [`max($clog2(NUM_WB_GROUPS)-1, 0):0] rd_wb_group;
+    logic [`max($clog2(NUM_WB_GROUPS)-1, 0):0] rd_wb_group; //TODO interpretation of this should change based on uses_rd_gp/fp. Needs less bits
     logic uses_rd_gp;
     logic uses_rd_fp;
     id_t id;

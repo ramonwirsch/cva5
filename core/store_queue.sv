@@ -55,7 +55,24 @@ module store_queue
 
     localparam LOG2_SQ_DEPTH = $clog2(CONFIG.SQ_DEPTH);
     localparam SNOOP_PORTS = RF_CONFIG.TOTAL_WB_GROUP_COUNT-1;
+    localparam SNOOP_PORTS_FLOAT_START = RF_CONFIG.FP_WB_PORT;
     typedef logic [LOG2_MAX_IDS:0] load_check_count_t;
+
+    typedef struct packed {
+        id_t idNeeded;
+        logic isFloat;
+    } forward_selector_t;
+
+    typedef struct packed {
+        logic [31:0] addr;
+        logic [3:0] be;
+        logic [2:0] fn3;
+        mem_subunit_t subunit_id;
+        logic is_amo_sc;
+        logic is_amo_rmw;
+        logic [4:0] amo_op;
+        logic has_paired_load;
+    } sq_internal_t;
 
 
     wb_packet_t wb_snoop_r [SNOOP_PORTS];
@@ -66,14 +83,15 @@ module store_queue
     logic [CONFIG.SQ_DEPTH-1:0] strictly_ordered;
     addr_hash_t [CONFIG.SQ_DEPTH-1:0] hashes;
     logic [CONFIG.SQ_DEPTH-1:0] released;
-    id_t [CONFIG.SQ_DEPTH-1:0] id_needed;
+    forward_selector_t [CONFIG.SQ_DEPTH-1:0] forward_selector;
+    logic [CONFIG.SQ_DEPTH-1:0] snoop_outstanding;
     load_check_count_t [CONFIG.SQ_DEPTH-1:0] load_check_count;
-    logic [31:0] store_data_from_wb [CONFIG.SQ_DEPTH];
+    logic [31:0] data_to_store [CONFIG.SQ_DEPTH];
     logic [31:0] sq_in_data_processed;
 
     //LUTRAM-based memory blocks
-    sq_entry_t sq_entry_in;
-    (* ramstyle = "MLAB, no_rw_check" *) logic [$bits(sq_entry_t)-1:0] sq_entry [CONFIG.SQ_DEPTH];
+    sq_internal_t sq_entry_in;
+    (* ramstyle = "MLAB, no_rw_check" *) logic [$bits(sq_internal_t)-1:0] sq_entry [CONFIG.SQ_DEPTH];
     (* ramstyle = "MLAB, no_rw_check" *) id_t [CONFIG.SQ_DEPTH-1:0] ids;
     (* ramstyle = "MLAB, no_rw_check" *) logic [LOG2_SQ_DEPTH-1:0] sq_ids [MAX_IDS];
 
@@ -131,9 +149,7 @@ module store_queue
         addr : sq.data_in.addr,
         be : (sq.data_in.store)? sq.data_in.be : 4'b0,
         fn3 : sq.data_in.fn3,
-        is_float : sq.data_in.is_float,
-        forwarded_store : sq.data_in.forwarded_store,
-        data : sq_in_data_processed,
+//        data : sq_in_data_processed,
         subunit_id : sq.data_in.subunit_id,
         is_amo_sc : sq.data_in.amo.is_sc,
         is_amo_rmw : sq.data_in.amo.is_rmw,
@@ -205,8 +221,9 @@ module store_queue
     end
     //waiting on ID mem
     always_ff @ (posedge clk) begin
-        if (sq.push)
-            id_needed[sq_index] <= sq.data_in.id_needed;
+        if (sq.push) begin
+            forward_selector[sq_index] <= '{ idNeeded: sq.data_in.id_needed, isFloat: CONFIG.INCLUDE_FPU_SINGLE && sq.data_in.is_float };
+        end
     end
 
     ////////////////////////////////////////////////////
@@ -262,15 +279,16 @@ module store_queue
 
         flopoco_to_ieee_sp snoop_to_ieee (
             .clk(clk),
-            .X(wb_snoop_r[RF_CONFIG.FP_WB_PORT-1].data),
+            .X(wb_snoop_r[SNOOP_PORTS_FLOAT_START].data),
             .R(wb_snooped_fp_conv)
         );
 
-        for (g = 0; g < SNOOP_PORTS; g++)
-            if (g == RF_CONFIG.FP_WB_PORT-1) // offset, port0 missing
+        for (g = 0; g < SNOOP_PORTS; g++) begin
+            if (g == SNOOP_PORTS_FLOAT_START) // offset, port0 missing
                 assign wb_snooped_data[g] = wb_snooped_fp_conv;
             else
                 assign wb_snooped_data[g] =  wb_snoop_r[g].data[31:0];
+        end
 
     end else begin
         assign sq_in_data_processed = sq.data_in.data;
@@ -279,14 +297,48 @@ module store_queue
             assign wb_snooped_data[g] =  wb_snoop_r[g].data[31:0];
     end endgenerate
 
+    logic [31:0] selected_snoop_data [2]; // 0: gp, 1: fp. basically muxes between all snoop-ports of same type if there are more than 1 each. Prefers first port. So that there is no undefined data
+    logic valid_snoop [2];
+
+    always_comb begin
+        selected_snoop_data[0] = '0;
+        selected_snoop_data[1] = '0;
+        valid_snoop[0] = 0;
+        valid_snoop[1] = 0;
+
+        for (int i = 0; i < SNOOP_PORTS; i++) begin
+            if (i < SNOOP_PORTS_FLOAT_START) begin
+                if (!valid_snoop[0]) begin
+                    selected_snoop_data[0] = wb_snooped_data[i];
+                    valid_snoop[0] = wb_snoop_r[i].valid && wb_snoop_r[i].id == forward_selector[i].idNeeded;
+                end
+            end else begin
+                if (!valid_snoop[1]) begin
+                    selected_snoop_data[1] = wb_snooped_data[i];
+                    valid_snoop[1] = wb_snoop_r[i].valid && wb_snoop_r[i].id == forward_selector[i].idNeeded;
+                end
+            end 
+        end
+    end
+
     always_ff @ (posedge clk) begin
         for (int i = 0; i < CONFIG.SQ_DEPTH; i++) begin
-            if (!released[i]) begin
-                for (int j = 0; j < SNOOP_PORTS; j++) begin
-                    if (wb_snoop_r[j].valid && wb_snoop_r[j].id == id_needed[i]) //TODO maybe store on which snoop port we expect the ID? just depends on FP bit
-                        store_data_from_wb[i] <= wb_snooped_data[j];
+            if (sq.push && sq_index == LOG2_SQ_DEPTH'(i)) begin
+                data_to_store[i] <= sq_in_data_processed; // possibly reroute through snoop logic, adding a fake snoop port to give it 1 more cycle
+                snoop_outstanding[i] <= sq.data_in.forwarded_store;
+            end else if (!released[i] && snoop_outstanding[i]) begin
+                if (forward_selector[i].isFloat && CONFIG.INCLUDE_FPU_SINGLE) begin
+                    if (valid_snoop[1]) begin
+                        data_to_store[i] <= selected_snoop_data[1];
+                        snoop_outstanding[i] <= 0;
+                    end
+                end else begin
+                    if (valid_snoop[0]) begin
+                        data_to_store[i] <= selected_snoop_data[0];
+                        snoop_outstanding[i] <= 0;
+                    end
                 end
-            end        
+            end
         end
     end
     
@@ -294,14 +346,14 @@ module store_queue
     //Store Transaction Outputs
     logic [31:0] data_for_alignment;
     logic [31:0] sq_data;
-    sq_entry_t output_entry;
+    sq_internal_t output_entry;
     assign output_entry = sq_entry[sq_oldest];
 
     always_comb begin
         //Input: ABCD
         //Assuming aligned requests,
         //Possible byte selections: (A/C/D, B/D, C/D, D)
-        data_for_alignment = output_entry.forwarded_store ? store_data_from_wb[sq_oldest] : output_entry.data;
+        data_for_alignment = data_to_store[sq_oldest]; // by definition, any forwarded data, was from a previous instruction (in exec order), which needed to have retired before our store (which includes wb)
 
         sq_data[7:0] = data_for_alignment[7:0];
         sq_data[15:8] = (output_entry.addr[1:0] == 2'b01) ? data_for_alignment[7:0] : data_for_alignment[15:8];
@@ -318,8 +370,6 @@ module store_queue
         addr : output_entry.addr,
         be : output_entry.be,
         fn3 : output_entry.fn3,
-        is_float : output_entry.is_float,
-        forwarded_store : output_entry.forwarded_store,
         data : sq_data,
         subunit_id : output_entry.subunit_id,
         is_amo_sc : output_entry.is_amo_sc,

@@ -180,19 +180,19 @@ module renamer
         .int_out (spec_tables_sel)
     );
 
-    //Normal operation
+    //Normal operation (an instruction was decoded. assign its current target phys reg)
     assign spec_tables_write_index_mux[0] = decode.rd_addr;
     assign spec_table_gp_phys_next_mux[0] = free_list_gp.data_out;
-    assign spec_tables_wb_group_next_mux[0] = decode.rd_wb_group;
-    //gc.writeback_suppress
+    assign spec_tables_wb_group_next_mux[0] = decode.rd_wb_group; // make GP specific
+    //gc.writeback_suppress (an instruction completed, but is not retired, but invalidated. rollback spec to previous state (inflight instruction carries prev mapping))
     assign spec_tables_write_index_mux[1] = inuse_list_output.rd_addr.rs;
     assign spec_table_gp_phys_next_mux[1] = inuse_list_output.previous_phys_addr;
     assign spec_tables_wb_group_next_mux[1] = inuse_list_output.previous_wb_group;
-    //rollback
+    //rollback (an instruction we assigned new phys mapping last cycle is being cancelled prior to issuing. rollback last change)
     assign spec_tables_write_index_mux[2] = issue.rd_addr.rs;
     assign spec_table_gp_phys_next_mux[2] = spec_table_previous_r.phys_addr;
     assign spec_tables_wb_group_next_mux[2] = spec_table_previous_r.wb_group;
-    //gc.init_clear
+    //gc.init_clear (we are resetting all phys mappings. ISA regs map to first 32 phys regs)
     assign spec_tables_write_index_mux[3] = clear_index[4:0];
     assign spec_table_gp_phys_next_mux[3] = {1'b0, clear_index[4:0]};
     assign spec_tables_wb_group_next_mux[3] = '0;
@@ -254,9 +254,11 @@ module renamer
 
         phys_addr_t spec_table_fp_phys_next_mux [4];
         phys_addr_t spec_table_fp_phys_next;
+        // TODO declare wbGroup with custom size (as long as there is only 1 fp write port 0. Maybe fake as 1 and never read it)
 
         //Normal operation
         assign spec_table_fp_phys_next_mux[0] = free_list_fp.data_out;
+        //TODO same for WB group, with current wb group being always 0
         //gc.writeback_suppress
         assign spec_table_fp_phys_next_mux[1] = inuse_list_output.previous_phys_addr;
         //rollback
@@ -265,6 +267,7 @@ module renamer
         assign spec_table_fp_phys_next_mux[3] = {1'b0, clear_index[4:0]};
 
         assign spec_table_fp_phys_next = spec_table_fp_phys_next_mux[spec_tables_sel];
+        //assign spec_table_fp_wb_group_next = spec_table_fp_wb_group_mux[spec_tables_sel];
 
         assign spec_table_fp_rs3_read_addr = decode.rs_addr[RS3].rs;
 
@@ -331,6 +334,7 @@ module renamer
 
         assign decode.phys_rs_addr[i] = spec_table_decode[i].phys_addr;
         assign decode.rs_wb_group[i] = spec_table_decode[i].wb_group;
+        //TODO ensure to assign only 0 bits to fp wb group, as is always the same right now
     end endgenerate
 
     assign decode.phys_rd_addr = decode.uses_rd_fp? free_list_fp.data_out : (|decode.rd_addr ? free_list_gp.data_out : '0);

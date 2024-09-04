@@ -149,7 +149,7 @@ module load_store_queue //ID-based input buffer for Load/Store Unit
         store : (!fused_load_and_store && !load_selected) || (fused_load_and_store && |sq.data_out.be),
         be : load_selected ? '0 : sq.data_out.be,
         fn3 : load_selected ? lq_data_out.fn3 : sq.data_out.fn3,
-        is_float : load_selected ? lq_data_out.is_float : sq.data_out.is_float,
+        is_float : lq_data_out.is_float, // only relevant for IEEE-flopoco conversion for load-results
         data_in : sq.data_out.data,
         id : lq_data_out.id,
         subunit_id : load_selected ? lq_data_out.subunit_id : sq.data_out.subunit_id,

@@ -235,6 +235,7 @@ module decode_and_issue
     endgenerate
 
     generate if (CONFIG.INCLUDE_FPU_SINGLE) begin: gen_fpu_unit_sel
+        // fsgn with same rs1==rs2 is float-move. But we need to actually make a copy, because renamer does not have refCounts, but only inuse fifo. Cannot track 1:n phys reg relations without expensive refCount
         assign unit_needed[UNIT_IDS.FP_MAC] = opcode_trim inside {FMADD_S_T, FMSUB_S_T, FNMADD_S_T, FNMSUB_S_T} || (opcode_trim == FP_T && (fn7_trim inside {FADD_fn7_T, FSUB_fn7_T, FMUL_fn7_T, FSGN_fn7_T}));
         assign unit_needed[UNIT_IDS.FP_DIV] = (opcode_trim == FP_T && (fn7_trim inside {FDIV_fn7_T, FSQRT_fn7_T}));
         assign unit_needed[UNIT_IDS.FP_SHORT] = (opcode_trim == FP_T && (fn7_trim inside {FMV_TO_FP_fn7_T, FCVT_TO_FP_fn7_T, FMUX_fn7_T}));

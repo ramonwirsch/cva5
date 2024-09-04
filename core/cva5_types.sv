@@ -273,13 +273,10 @@ package cva5_types;
         amo_details_t amo;
     } lsq_entry_t;
 
-    // used for all destructive memory accesses. Includes Peri-Loads, that must only execute on retire
     typedef struct packed {
         logic [31:0] addr;
         logic [3:0] be;
         logic [2:0] fn3;
-        logic is_float;
-        logic forwarded_store;
         logic [31:0] data;
         mem_subunit_t subunit_id;
         logic is_amo_sc;
