@@ -55,7 +55,7 @@ module store_queue
 
     localparam LOG2_SQ_DEPTH = $clog2(CONFIG.SQ_DEPTH);
     localparam SNOOP_PORTS = RF_CONFIG.TOTAL_WB_GROUP_COUNT-1;
-    localparam SNOOP_PORTS_FLOAT_START = RF_CONFIG.FP_WB_PORT;
+    localparam SNOOP_PORTS_FLOAT_START = RF_CONFIG.FP_WB_PORT-1;
     typedef logic [LOG2_MAX_IDS:0] load_check_count_t;
 
     typedef struct packed {
@@ -74,6 +74,10 @@ module store_queue
         logic has_paired_load;
     } sq_internal_t;
 
+    typedef struct packed {
+        logic isValid;
+        logic [31:0] data;
+    } snoop_result_t;
 
     wb_packet_t wb_snoop_r [SNOOP_PORTS];
 
@@ -297,27 +301,30 @@ module store_queue
             assign wb_snooped_data[g] =  wb_snoop_r[g].data[31:0];
     end endgenerate
 
-    logic [31:0] selected_snoop_data [2]; // 0: gp, 1: fp. basically muxes between all snoop-ports of same type if there are more than 1 each. Prefers first port. So that there is no undefined data
-    logic valid_snoop [2];
-
-    always_comb begin
-        selected_snoop_data[0] = '0;
-        selected_snoop_data[1] = '0;
-        valid_snoop[0] = 0;
-        valid_snoop[1] = 0;
+    function snoop_result_t doSnoop(input forward_selector_t fwdSel, input wb_packet_t snoopPorts [SNOOP_PORTS], input logic [31:0] snoopData [SNOOP_PORTS]);
+        logic [31:0] selected_snoop_data;
+        logic valid;
+        valid = 0;
 
         for (int i = 0; i < SNOOP_PORTS; i++) begin
-            if (i < SNOOP_PORTS_FLOAT_START) begin
-                if (!valid_snoop[0]) begin
-                    selected_snoop_data[0] = wb_snooped_data[i];
-                    valid_snoop[0] = wb_snoop_r[i].valid && wb_snoop_r[i].id == forward_selector[i].idNeeded;
+            if ((i >= SNOOP_PORTS_FLOAT_START) == fwdSel.isFloat) begin
+                if (!valid) begin
+                    selected_snoop_data = snoopData[i];
+                    valid = snoopPorts[i].valid && snoopPorts[i].id == fwdSel.idNeeded;
                 end
-            end else begin
-                if (!valid_snoop[1]) begin
-                    selected_snoop_data[1] = wb_snooped_data[i];
-                    valid_snoop[1] = wb_snoop_r[i].valid && wb_snoop_r[i].id == forward_selector[i].idNeeded;
-                end
-            end 
+            end
+        end
+        return '{
+            isValid: valid,
+            data: selected_snoop_data
+        };
+    endfunction
+
+    snoop_result_t snoopResult [CONFIG.SQ_DEPTH];
+
+    always_comb begin
+        for (int i = 0; i < CONFIG.SQ_DEPTH; i++) begin
+            snoopResult[i] = doSnoop(forward_selector[i], wb_snoop_r, wb_snooped_data);
         end
     end
 
@@ -327,16 +334,9 @@ module store_queue
                 data_to_store[i] <= sq_in_data_processed; // possibly reroute through snoop logic, adding a fake snoop port to give it 1 more cycle
                 snoop_outstanding[i] <= sq.data_in.forwarded_store;
             end else if (!released[i] && snoop_outstanding[i]) begin
-                if (forward_selector[i].isFloat && CONFIG.INCLUDE_FPU_SINGLE) begin
-                    if (valid_snoop[1]) begin
-                        data_to_store[i] <= selected_snoop_data[1];
-                        snoop_outstanding[i] <= 0;
-                    end
-                end else begin
-                    if (valid_snoop[0]) begin
-                        data_to_store[i] <= selected_snoop_data[0];
-                        snoop_outstanding[i] <= 0;
-                    end
+                if (snoopResult[i].isValid) begin
+                    data_to_store[i] <= snoopResult[1].data;
+                    snoop_outstanding[i] <= 0;
                 end
             end
         end
