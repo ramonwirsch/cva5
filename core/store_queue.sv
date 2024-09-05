@@ -335,7 +335,7 @@ module store_queue
                 snoop_outstanding[i] <= sq.data_in.forwarded_store;
             end else if (!released[i] && snoop_outstanding[i]) begin
                 if (snoopResult[i].isValid) begin
-                    data_to_store[i] <= snoopResult[1].data;
+                    data_to_store[i] <= snoopResult[i].data;
                     snoop_outstanding[i] <= 0;
                 end
             end
@@ -388,6 +388,8 @@ module store_queue
         assert property (@(posedge clk) disable iff (rst) sq.push |-> (~sq.full | sq.pop)) else $error("sq overflow");
     fifo_underflow_assertion:
         assert property (@(posedge clk) disable iff (rst) sq.pop |-> sq.valid) else $error("sq underflow");
+    neverIssueOutstandingSnoop:
+        assert property (@(posedge clk) disable iff (rst) sq.pop |-> released[sq_oldest] && !snoop_outstanding[sq_oldest]) else $error("executing sq", sq_oldest, " but was either not released or snooped ", released[sq_oldest], snoop_outstanding[sq_oldest]);
 
 
 endmodule
